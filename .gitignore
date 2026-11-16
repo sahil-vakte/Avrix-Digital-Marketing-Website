@@ -1,0 +1,13 @@
+node_modules
+.next
+.env
+.env.local
+uploads
+backups
+*.log
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Local development tooling and database
+.local-tools/
+.npm-cache/
