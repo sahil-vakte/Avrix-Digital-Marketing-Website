@@ -19,7 +19,18 @@ ln -s "$ROOT/shared/uploads" "$release/uploads"
 export PATH="$ROOT/node/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 if [[ -n "$previous" && -d "$previous" ]]; then
   echo 'Backing up this application database before migration'
-  runuser -u avrixmarketing -- bash -c 'set -a; . /opt/avrix-marketing/shared/.env; set +a; pg_dump "$DATABASE_URL" -Fc > "/opt/avrix-marketing/shared/backups/$(date -u +%Y%m%dT%H%M%S).dump"'
+  runuser -u avrixmarketing -- node --env-file="$ROOT/shared/.env" -e '
+    const fs = require("node:fs");
+    const { spawnSync } = require("node:child_process");
+    const output = fs.openSync(process.argv[1], "wx", 0o600);
+    const result = spawnSync("pg_dump", ["-Fc"], {
+      env: { ...process.env, PGDATABASE: process.env.DATABASE_URL },
+      stdio: ["ignore", output, 2],
+    });
+    fs.closeSync(output);
+    if (result.error) console.error(result.error.message);
+    process.exit(result.status ?? 1);
+  ' "$ROOT/shared/backups/$(date -u +%Y%m%dT%H%M%S).dump"
 fi
 echo 'Applying application migrations'
 runuser -u avrixmarketing -- bash -c 'cd "$1"; export NODE_ENV=production; /opt/avrix-marketing/node/bin/node node_modules/tsx/dist/cli.mjs scripts/migrate.ts' -- "$release"
