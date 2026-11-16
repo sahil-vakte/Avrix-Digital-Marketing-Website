@@ -31,7 +31,6 @@ async function confirmTotp(fd: FormData) {
 async function disableTotp(fd: FormData) {
   "use server";
   const user = await requireUser();
-  if (user.role === "ADMIN") redirect("/admin/account/security?error=Admins+must+keep+two-factor+authentication+on");
   if (!(await checkPassword(String(fd.get("password") ?? ""), user.passwordHash))) redirect("/admin/account/security?error=Incorrect+password");
   await db.update(t.users).set({ totpEnabled: false, totpSecret: null }).where(eq(t.users.id, user.id));
   await audit(user.id, "2fa_disabled", "user", user.id);
@@ -58,13 +57,12 @@ export default async function Security({ searchParams }: { searchParams: Promise
   return (
     <div className="max-w-3xl">
       <PageHeader title="Account security" sub={`${user.name} · ${user.email}`} />
-      {sp.setup && !user.totpEnabled && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Administrators must turn on two-factor authentication before using the admin panel.</p>}
       <Flash ok={sp.ok} error={sp.error} />
       <div className="space-y-6">
         <Card title="Two-factor authentication">
           {user.totpEnabled ? (
             <div className="space-y-3"><p className="text-sm text-green-700">✓ On. You'll be asked for a code from your authenticator app at each sign-in.</p>
-              {user.role !== "ADMIN" && <form action={disableTotp} className="flex gap-2"><input name="password" type="password" required placeholder="Your password" className="input w-56" /><SubmitButton className="btn-ghost">Turn off</SubmitButton></form>}
+              <form action={disableTotp} className="flex gap-2"><input name="password" type="password" required placeholder="Your password" className="input w-56" /><SubmitButton className="btn-ghost">Turn off</SubmitButton></form>
             </div>
           ) : verifying ? (
             <form action={confirmTotp} className="grid gap-4 sm:grid-cols-[220px_1fr]">
@@ -79,7 +77,7 @@ export default async function Security({ searchParams }: { searchParams: Promise
               </div>
             </form>
           ) : (
-            <form action={startTotp}><p className="mb-3 text-sm">Protect your account with a code from an authenticator app.</p><SubmitButton>Set up two-factor authentication</SubmitButton></form>
+            <form action={startTotp}><p className="mb-3 text-sm">Two-factor authentication is optional. You can sign in with your email and password, or enable an authenticator code for additional protection.</p><SubmitButton>Set up two-factor authentication</SubmitButton></form>
           )}
         </Card>
         <Card title="Change password">

@@ -42,7 +42,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
           <label><span className="label">Temporary password</span><input name="password" type="password" minLength={12} required className="input" autoComplete="new-password" /></label>
           <SubmitButton>Create user</SubmitButton>
         </form>
-        <p className="mt-2 text-xs text-ink-500">Share the temporary password securely. Admins must set up two-factor authentication at first sign-in.</p>
+        <p className="mt-2 text-xs text-ink-500">Share the temporary password securely. Two-factor authentication is optional and can be enabled in Account security.</p>
       </Card>
     </div>
   );

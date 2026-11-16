@@ -5,7 +5,7 @@ One Next.js application for **Avrix UK & Europe Business Marketing** (part of Av
 | Part | What it does |
 | --- | --- |
 | **Public website** | Long-scroll home page, 6 service pages, pricing (GBP/EUR), case studies, blog, contact form, call booking, WhatsApp button, cookie consent, SEO (sitemap, schema.org, metadata) |
-| **Admin panel** (`/admin`) | Login with 2FA, dashboard, leads pipeline (Kanban + table), contacts, CSV/Excel/PDF import, lists & segments, suppression list, templates, campaigns, bookings, website content editor, settings, users, audit log |
+| **Admin panel** (`/admin`) | Login with optional 2FA, dashboard, leads pipeline (Kanban + table), contacts, CSV/Excel/PDF import, lists & segments, suppression list, templates, campaigns, bookings, website content editor, settings, users, audit log |
 | **Campaign engine** | Personalised emails sent one by one through **your own SMTP account from `.env`** (Google Workspace by default), with A/B subjects, up to 3 threaded follow-ups, send windows, daily/hourly caps, warm-up, open/click/reply/bounce/unsubscribe tracking |
 | **Worker** (`npm run worker`) | Always-on process that sends the queue, picks A/B winners, completes campaigns and reads the mailbox over IMAP for bounces and replies |
 
@@ -26,7 +26,7 @@ npm run dev                     # website on http://localhost:3000, admin on /ad
 npm run worker                  # in a second terminal — sends email and monitors the mailbox
 ```
 
-Sign in at `/admin/login` with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. Administrators must set up two-factor authentication (Google Authenticator, 1Password, etc.) at first sign-in. Change the seeded password straight away in **Account security**.
+Sign in at `/admin/login` with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. Administrators can sign in with email and password. Two-factor authentication is optional and can be enabled in Account security. Change the seeded password straight away in **Account security**.
 
 Production deployment on a VPS: see **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 

@@ -11,13 +11,6 @@ export async function middleware(req: NextRequest) {
     url.search = pathname !== "/admin" ? `?next=${encodeURIComponent(pathname)}` : "";
     return NextResponse.redirect(url);
   }
-  // Admins must set up two-factor authentication before using the panel.
-  if (session.role === "ADMIN" && !session.mfa && !pathname.startsWith("/admin/account")) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/admin/account/security";
-    url.search = "?setup=1";
-    return NextResponse.redirect(url);
-  }
   return NextResponse.next();
 }
 

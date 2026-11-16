@@ -72,7 +72,7 @@ Copy backups off the server (see the comment in `deploy/backup.sh`). Test a rest
 ## 6. Go-live checklist
 
 - [ ] `APP_URL` is the live https address
-- [ ] Admin password changed and 2FA set up for every admin
+- [ ] Admin password changed; optional 2FA configured if desired
 - [ ] *Settings → Test SMTP login* succeeds
 - [ ] SPF, DKIM and DMARC are green in *Settings*
 - [ ] IMAP enabled for the mailbox; *Settings* shows "last check" updating every few minutes

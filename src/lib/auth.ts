@@ -42,6 +42,7 @@ export async function requireUser(opts: { admin?: boolean } = {}) {
   if (!user || !user.active) {
     redirect("/admin/login");
   }
+  if (user.totpEnabled && !s.mfa) redirect("/admin/login");
   if (opts.admin && user.role !== "ADMIN") redirect("/admin?denied=1");
   return user;
 }

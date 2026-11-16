@@ -59,7 +59,7 @@ export async function loginAction(_prev: LoginState, fd: FormData): Promise<Logi
     return { step: "totp", next };
   }
   await finishLogin(user, false, ip);
-  redirect(user.role === "ADMIN" ? "/admin/account/security?setup=1" : next);
+  redirect(next);
 }
 
 async function finishLogin(user: typeof t.users.$inferSelect, mfa: boolean, ip: string) {
