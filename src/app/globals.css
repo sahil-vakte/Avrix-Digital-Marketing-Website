@@ -45,3 +45,94 @@ body { @apply bg-white text-ink-900 antialiased; }
 .tiptap a { color: #2347d6; text-decoration: underline; }
 .tiptap blockquote { border-left: 3px solid #dbe7ff; padding-left: .8em; color: #5b6475; }
 .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; color: #a3abba; pointer-events: none; height: 0; }
+
+/* ───────────────────────── Public website theme ─────────────────────────
+   Everything below is scoped to .site-root (the public site wrapper), so the
+   admin panel keeps its own look regardless of the visitor's light/dark choice. */
+.site-root {
+  --s-bg: 255 255 255;
+  --s-soft: 244 247 253;
+  --s-surface: 255 255 255;
+  --s-raised: 248 250 255;
+  --s-fg: 9 14 30;
+  --s-muted: 78 90 115;
+  --s-line: 224 230 242;
+  --s-primary: 37 99 235;
+  --s-cyan: 8 145 178;
+  --s-violet: 124 58 237;
+  --s-amber: 217 119 6;
+  --s-green: 22 163 74;
+  --font-sans: var(--font-geist-sans), "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: var(--font-geist-sans), "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+  @apply min-h-screen bg-s-bg font-sans text-s-fg antialiased;
+}
+html[data-site-theme="dark"] .site-root {
+  --s-bg: 4 8 21;
+  --s-soft: 7 13 34;
+  --s-surface: 11 19 45;
+  --s-raised: 15 25 58;
+  --s-fg: 236 241 250;
+  --s-muted: 152 165 194;
+  --s-line: 30 43 82;
+  --s-primary: 92 136 255;
+  --s-cyan: 34 211 238;
+  --s-violet: 167 139 250;
+  --s-amber: 251 191 36;
+  --s-green: 74 222 128;
+  color-scheme: dark;
+}
+/* Always-dark panels (like the big navy feature blocks) use the dark palette in both modes */
+.site-root .s-dark {
+  --s-bg: 4 8 21; --s-soft: 7 13 34; --s-surface: 11 19 45; --s-raised: 15 25 58;
+  --s-fg: 236 241 250; --s-muted: 152 165 194; --s-line: 30 43 82;
+  --s-primary: 92 136 255; --s-cyan: 34 211 238; --s-violet: 167 139 250; --s-amber: 251 191 36; --s-green: 74 222 128;
+  color: rgb(var(--s-fg));
+}
+html[data-site-theme="dark"] body:has(.site-root) { background: #040815; }
+.site-root ::selection { background: rgb(var(--s-primary) / .25); }
+
+@layer components {
+  .s-container { @apply mx-auto w-full max-w-7xl px-5 sm:px-8; }
+  .s-section { @apply py-20 lg:py-28; }
+  .s-btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-s-primary focus-visible:ring-offset-2 focus-visible:ring-offset-s-bg disabled:cursor-not-allowed disabled:opacity-50; }
+  .s-btn-primary { @apply s-btn bg-gradient-to-r from-[#2563eb] to-[#4f7cff] text-white shadow-glow hover:-translate-y-0.5 hover:brightness-110; }
+  .s-btn-ghost { @apply s-btn border border-s-line bg-s-surface/70 text-s-fg backdrop-blur hover:-translate-y-0.5 hover:border-s-primary/50; }
+  .s-btn-light { @apply s-btn bg-white text-navy-950 hover:-translate-y-0.5 hover:bg-blue-50; }
+  .s-btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
+  .s-eyebrow { @apply inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-s-cyan; }
+  .s-pill { @apply inline-flex items-center gap-2 rounded-full border border-s-line bg-s-surface/70 px-3 py-1 text-xs font-semibold text-s-muted backdrop-blur; }
+  .s-h1 { @apply font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl; }
+  .s-h2 { @apply font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-[2.75rem]; }
+  .s-lead { @apply text-lg leading-relaxed text-s-muted; }
+  .s-card { @apply rounded-2xl border border-s-line bg-s-surface shadow-soft; }
+  .s-card-hover { @apply transition duration-300 hover:-translate-y-1 hover:border-s-primary/40 hover:shadow-glow; }
+  .s-glass { @apply rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur; }
+  .s-gradient-text { @apply bg-gradient-to-r from-[#3b82f6] via-[#22d3ee] to-[#a78bfa] bg-[length:200%_auto] bg-clip-text text-transparent animate-s-shimmer; }
+  .s-input { @apply block w-full rounded-xl border border-s-line bg-s-raised px-3.5 py-2.5 text-sm text-s-fg placeholder:text-s-muted/70 transition focus:border-s-primary focus:outline-none focus:ring-4 focus:ring-s-primary/15 disabled:opacity-60; }
+  .s-label { @apply mb-1.5 block text-xs font-semibold text-s-muted; }
+  .s-icon-tile { @apply inline-flex h-11 w-11 items-center justify-center rounded-xl bg-s-primary/10 text-s-primary ring-1 ring-inset ring-s-primary/20; }
+  .s-grid-bg { background-image: linear-gradient(rgb(var(--s-line) / .55) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--s-line) / .55) 1px, transparent 1px); background-size: 56px 56px; }
+  .s-prose h2 { @apply mt-10 mb-3 font-display text-2xl font-bold text-s-fg; }
+  .s-prose h3 { @apply mt-8 mb-2 font-display text-xl font-bold text-s-fg; }
+  .s-prose p { @apply mb-4 leading-7 text-s-muted; }
+  .s-prose ul { @apply mb-4 list-disc pl-6 text-s-muted marker:text-s-primary; }
+  .s-prose ol { @apply mb-4 list-decimal pl-6 text-s-muted; }
+  .s-prose li { @apply mb-1.5 leading-7; }
+  .s-prose b, .s-prose strong { @apply text-s-fg; }
+  .s-prose a { @apply text-s-primary underline underline-offset-2; }
+  .s-prose blockquote { @apply my-6 border-l-4 border-s-primary/40 pl-4 italic text-s-muted; }
+  .s-prose img { @apply my-6 rounded-2xl; }
+}
+
+/* Scroll-reveal: elements start hidden only once JS has marked the page ready */
+html.site-js .site-root [data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); transition-delay: var(--reveal-delay, 0ms); }
+html.site-js .site-root [data-reveal="left"] { transform: translateX(-28px); }
+html.site-js .site-root [data-reveal="right"] { transform: translateX(28px); }
+html.site-js .site-root [data-reveal="zoom"] { transform: scale(.94); }
+html.site-js .site-root [data-reveal].is-visible { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .site-root *, .site-root *::before, .site-root *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+  html.site-js .site-root [data-reveal] { opacity: 1; transform: none; }
+}

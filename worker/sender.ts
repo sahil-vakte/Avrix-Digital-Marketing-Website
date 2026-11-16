@@ -122,6 +122,7 @@ async function deliver(m: EmailMessage, c: typeof t.campaigns.$inferSelect | nul
 
     const rendered = await renderEmail({
       bodyHtml: html, subject, data, token: m.token, trackOpens, trackClicks, includeUnsubscribe,
+      layout: m.kind === "ONE_TO_ONE" ? "letter" : "branded",
       linkId: async (url) => {
         const campaignId = m.campaignId ?? null;
         const found = await db.query.links.findFirst({

@@ -1,3 +1,5 @@
+import type { SceneKind } from "@/components/site/art/Scene";
+
 // Website copy. Edit here (or move into the CMS later). All copy is original to Avrix.
 export const SITE = {
   name: "Avrix UK & Europe",
@@ -137,3 +139,14 @@ export const TESTIMONIALS = [
   { quote: "We finally know which ads bring in work. Enquiries are up and we spend less.", name: "Sample client", role: "Director, home services (UK)" },
   { quote: "Leads now get a reply in minutes. It has changed how we sell.", name: "Sample client", role: "Founder, B2B services (Ireland)" },
 ];
+
+// Illustration used for each service, pillar and problem (see components/site/art/Scene.tsx)
+export const SERVICE_SCENES: Record<string, SceneKind> = {
+  "google-ads": "search", "meta-ads": "megaphone", "seo-content": "document",
+  websites: "browser", "crm-lead-management": "pipeline", "email-whatsapp-automation": "chat",
+};
+export const PILLAR_SCENES: SceneKind[] = ["browser", "target", "funnel", "chat", "chart", "cycle"];
+export const PROBLEM_SCENES: Record<string, SceneKind> = {
+  quality: "funnel", followup: "chat", website: "browser", spend: "chart", launch: "rocket", social: "social",
+};
+export const CHANNELS = ["Google Ads", "Meta Ads", "Google Analytics 4", "Search Console", "Tag Manager", "WhatsApp Business", "Google Workspace", "Looker Studio", "Google Business Profile", "Instagram", "Facebook Lead Ads", "LinkedIn"];

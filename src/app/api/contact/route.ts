@@ -5,6 +5,7 @@ import { db, t } from "@/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { addActivity, ensureLead } from "@/lib/crm";
 import { alertAdmin } from "@/lib/outbox";
+import { infoBox, button } from "@/lib/email-blocks";
 import { normaliseCountry } from "@/lib/countries";
 import { isValidSyntax, normaliseEmail } from "@/lib/email-validate";
 import { env } from "@/lib/env";
@@ -57,10 +58,14 @@ export async function POST(req: NextRequest) {
   });
 
   await alertAdmin(`New enquiry: ${b.name} (${b.businessName})`, `
-    <p><b>${escapeHtml(b.name)}</b> from <b>${escapeHtml(b.businessName)}</b> (${escapeHtml(country)})</p>
-    <p>Email: ${escapeHtml(email)}<br>Phone: ${escapeHtml(b.phone || "—")}<br>Service: ${escapeHtml(b.service || "—")}<br>Budget: ${escapeHtml(b.budget || "—")}</p>
-    <blockquote style="border-left:3px solid #ddd;padding-left:10px">${escapeHtml(b.message).replace(/\n/g, "<br>")}</blockquote>
-    <p>Source: ${escapeHtml(b.utm.utm_source ?? b.utm.referrer ?? "direct")} · Landing page: ${escapeHtml(b.utm.landing_page ?? "—")}</p>
-    <p><a href="${env.appUrl}/admin/leads/${lead.id}">Open in CRM</a></p>`);
+    <p>You have a new enquiry from the website.</p>
+    ${infoBox([
+      ["Who", `${escapeHtml(b.name)} · ${escapeHtml(b.businessName)} (${escapeHtml(country)})`],
+      ["Email", escapeHtml(email)], ["Phone", escapeHtml(b.phone || "—")],
+      ["Service", escapeHtml(b.service || "—")], ["Budget", escapeHtml(b.budget || "—")],
+    ])}
+    <blockquote style="border-left:3px solid #c7d7fe;padding-left:12px;color:#475569">${escapeHtml(b.message).replace(/\n/g, "<br>")}</blockquote>
+    <p style="font-size:13px;color:#64748b">Source: ${escapeHtml(b.utm.utm_source ?? b.utm.referrer ?? "direct")} · Landing page: ${escapeHtml(b.utm.landing_page ?? "—")}</p>
+    ${button(`${env.appUrl}/admin/leads/${lead.id}`, "Open in CRM")}`);
   return Response.json({ ok: true });
 }
