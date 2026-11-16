@@ -58,10 +58,10 @@ export function CookieBanner() {
 
   if (!show) return null;
   return (
-    <div role="dialog" aria-label="Cookie preferences" className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-2xl rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
-      <p className="text-sm text-ink-700">
+    <div role="dialog" aria-label="Cookie preferences" className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-2xl rounded-2xl border border-s-line bg-s-surface p-5 shadow-glow backdrop-blur">
+      <p className="text-sm text-s-fg/80">
         We use essential cookies to run this site. With your permission we also use analytics and marketing cookies to understand visits and measure our ads.{" "}
-        <Link href="/cookies" className="text-brand-600 underline">Cookie policy</Link>
+        <Link href="/cookies" className="text-s-primary underline">Cookie policy</Link>
       </p>
       {custom && (
         <div className="mt-3 space-y-2 text-sm">
@@ -71,11 +71,11 @@ export function CookieBanner() {
         </div>
       )}
       <div className="mt-4 flex flex-wrap gap-2">
-        <button className="btn-primary btn-sm" onClick={() => save({ analytics: true, marketing: true })}>Accept all</button>
-        <button className="btn-ghost btn-sm" onClick={() => save({ analytics: false, marketing: false })}>Reject non-essential</button>
+        <button className="s-btn-primary s-btn-sm" onClick={() => save({ analytics: true, marketing: true })}>Accept all</button>
+        <button className="s-btn-ghost s-btn-sm" onClick={() => save({ analytics: false, marketing: false })}>Reject non-essential</button>
         {custom
-          ? <button className="btn-ghost btn-sm" onClick={() => save({ analytics, marketing })}>Save choices</button>
-          : <button className="btn-ghost btn-sm" onClick={() => setCustom(true)}>Customise</button>}
+          ? <button className="s-btn-ghost s-btn-sm" onClick={() => save({ analytics, marketing })}>Save choices</button>
+          : <button className="s-btn-ghost s-btn-sm" onClick={() => setCustom(true)}>Customise</button>}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { infoBox, button } from "@/lib/email-blocks";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db, t } from "@/db";
@@ -43,8 +44,8 @@ export async function POST(req: NextRequest) {
 
   await queueEmail({
     to: email, kind: "SYSTEM", leadId: lead.id, subject: "Your call with Avrix UK & Europe is booked",
-    html: `<p>Hi ${escapeHtml(b.name.split(" ")[0])},</p><p>Thanks for booking a call with us. Your call is confirmed for <b>${escapeHtml(when)}</b> (${s.slotMinutes} minutes).</p><p>We'll call you on ${escapeHtml(b.phone || "the number you provide")} or send a video link beforehand. If you need to rearrange, just reply to this email.</p><p>Best regards,<br>Avrix UK &amp; Europe</p>`,
+    html: `<p>Hi ${escapeHtml(b.name.split(" ")[0])},</p><p>Thanks for booking a call with us — it's confirmed.</p>${infoBox([["When", escapeHtml(when)], ["Length", `${s.slotMinutes} minutes`], ["How", `We'll call you on ${escapeHtml(b.phone || "the number you provide")} or send a video link beforehand`]])}<p>If you need to rearrange, just reply to this email.</p><p>Best regards,<br>Avrix UK &amp; Europe</p>`,
   });
-  await alertAdmin(`Call booked: ${b.name} — ${when}`, `<p>${escapeHtml(b.name)} (${escapeHtml(email)}, ${escapeHtml(b.phone || "no phone")}) booked a call for <b>${escapeHtml(when)}</b>.</p><p>Topic: ${escapeHtml(b.topic || "—")}</p><p><a href="${env.appUrl}/admin/leads/${lead.id}">Open lead</a></p>`);
+  await alertAdmin(`Call booked: ${b.name} — ${when}`, `<p>A new call has been booked.</p>${infoBox([["Who", `${escapeHtml(b.name)} · ${escapeHtml(email)}`], ["Phone", escapeHtml(b.phone || "No phone")], ["When", escapeHtml(when)], ["Topic", escapeHtml(b.topic || "—")]])}${button(`${env.appUrl}/admin/leads/${lead.id}`, "Open lead")}`);
   return Response.json({ ok: true, when });
 }
