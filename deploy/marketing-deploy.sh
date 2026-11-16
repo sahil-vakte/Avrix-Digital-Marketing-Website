@@ -22,9 +22,17 @@ if [[ -n "$previous" && -d "$previous" ]]; then
   runuser -u avrixmarketing -- node --env-file="$ROOT/shared/.env" -e '
     const fs = require("node:fs");
     const { spawnSync } = require("node:child_process");
+    const database = new URL(process.env.DATABASE_URL);
     const output = fs.openSync(process.argv[1], "wx", 0o600);
     const result = spawnSync("pg_dump", ["-Fc"], {
-      env: { ...process.env, PGDATABASE: process.env.DATABASE_URL },
+      env: {
+        ...process.env,
+        PGHOST: database.hostname,
+        PGPORT: database.port || "5432",
+        PGUSER: decodeURIComponent(database.username),
+        PGPASSWORD: decodeURIComponent(database.password),
+        PGDATABASE: decodeURIComponent(database.pathname.slice(1)),
+      },
       stdio: ["ignore", output, 2],
     });
     fs.closeSync(output);
