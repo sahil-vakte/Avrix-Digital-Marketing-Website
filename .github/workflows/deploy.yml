@@ -1,0 +1,75 @@
+name: Production deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrix-marketing-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: avrix
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: avrix_ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U avrix -d avrix_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://avrix:ci-only-password@localhost:5432/avrix_ci
+      APP_URL: ${{ vars.APP_URL || 'http://92.205.160.39' }}
+      NEXT_TELEMETRY_DISABLED: '1'
+      IMAP_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate and build on GitHub (never on the VPS)
+        run: |
+          npm run typecheck
+          npm test
+          npm run db:migrate
+          npm run db:seed
+          npm run build
+      - name: Package Linux production release
+        run: |
+          npm prune --omit=dev
+          printf '%s\n' "$GITHUB_SHA" > REVISION
+          tar --exclude='.next/cache' -czf release.tar.gz \
+            .next node_modules public scripts src worker drizzle \
+            package.json package-lock.json next.config.mjs tsconfig.json REVISION
+      - name: Deploy through restricted SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/marketing_deploy
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/marketing_deploy ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/marketing_deploy' EXIT
+          ssh -T -i ~/.ssh/marketing_deploy -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=8 avrixmarketing@92.205.160.39 deploy < release.tar.gz
+      - name: Verify public endpoint and existing sites
+        run: |
+          curl --fail --retry 5 --retry-delay 3 "$APP_URL/api/health"
+          curl --fail --silent --output /dev/null https://avrixdigital.co.uk
+          curl --fail --silent --output /dev/null https://wims.cloud

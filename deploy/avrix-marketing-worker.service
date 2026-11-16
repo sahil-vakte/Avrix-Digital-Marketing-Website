@@ -1,0 +1,26 @@
+[Unit]
+Description=Avrix marketing campaign worker
+After=network.target postgresql@16-main.service
+
+[Service]
+User=avrixmarketing
+Group=avrixmarketing
+Slice=avrix-marketing.slice
+WorkingDirectory=/opt/avrix-marketing/current
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--max-old-space-size=128
+Environment=PATH=/opt/avrix-marketing/node/bin:/usr/bin:/bin
+ExecStart=/opt/avrix-marketing/node/bin/node node_modules/tsx/dist/cli.mjs worker/index.ts
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+MemoryMax=224M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/avrix-marketing
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
