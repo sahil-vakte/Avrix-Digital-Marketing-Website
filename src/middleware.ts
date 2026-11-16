@@ -6,8 +6,7 @@ export async function middleware(req: NextRequest) {
   if (pathname === "/admin/login" || pathname.startsWith("/admin/reset")) return NextResponse.next();
   const session = await verifySession(req.cookies.get(SESSION_COOKIE)?.value);
   if (!session) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/admin/login";
+    const url = new URL("/admin/login", process.env.APP_URL || req.url);
     url.search = pathname !== "/admin" ? `?next=${encodeURIComponent(pathname)}` : "";
     return NextResponse.redirect(url);
   }
