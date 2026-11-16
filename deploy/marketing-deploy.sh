@@ -16,7 +16,7 @@ test -f "$release/node_modules/next/dist/bin/next"
 test -f "$release/REVISION"
 ln -s "$ROOT/shared/.env" "$release/.env"
 ln -s "$ROOT/shared/uploads" "$release/uploads"
-export PATH="$ROOT/node/bin:/usr/bin:/bin"
+export PATH="$ROOT/node/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 if [[ -n "$previous" && -d "$previous" ]]; then
   echo 'Backing up this application database before migration'
   runuser -u avrixmarketing -- bash -c 'set -a; . /opt/avrix-marketing/shared/.env; set +a; pg_dump "$DATABASE_URL" -Fc > "/opt/avrix-marketing/shared/backups/$(date -u +%Y%m%dT%H%M%S).dump"'
