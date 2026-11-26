@@ -94,8 +94,8 @@ export async function processIntake(app: Application, p: IntakeLeadInput, idempo
   let existing: Lead | undefined;
   if (p.externalId) existing = await db.query.leads.findFirst({ where: and(eq(t.leads.applicationId, app.id), eq(t.leads.externalId, p.externalId)) });
   const sameRecord = !!existing;
-  if (!existing && email) existing = await db.query.leads.findFirst({ where: and(eq(t.leads.applicationId, app.id), ilike(t.leads.email, email)) });
-  if (!existing && !email && p.phone) existing = await db.query.leads.findFirst({ where: and(eq(t.leads.applicationId, app.id), eq(t.leads.phone, p.phone)) });
+  if (!existing && email) existing = await db.query.leads.findFirst({ where: and(eq(t.leads.applicationId, app.id), ilike(t.leads.email, email), p.externalId ? isNull(t.leads.externalId) : undefined) });
+  if (!existing && !email && p.phone) existing = await db.query.leads.findFirst({ where: and(eq(t.leads.applicationId, app.id), eq(t.leads.phone, p.phone), p.externalId ? isNull(t.leads.externalId) : undefined) });
 
   let result: IntakeResult;
   const meta = { service: p.service, budget: p.budget, attribution: utm, customFields: clean(p.customFields), attachments: p.attachments, externalId: p.externalId };
