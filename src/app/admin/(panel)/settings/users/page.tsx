@@ -6,13 +6,19 @@ import { Badge, Card, Flash, PageHeader } from "@/components/admin/ui";
 import { SubmitButton } from "@/components/admin/buttons";
 import { fmtDate } from "@/lib/utils";
 import { saveUser } from "../actions";
+import { listApplications } from "@/lib/apps";
 
 export const metadata = { title: "Users" };
 
 export default async function Users({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
   const me = await requireUser({ admin: true });
   const sp = await searchParams;
-  const users = await db.select().from(t.users).orderBy(asc(t.users.name));
+  const [users, apps, links] = await Promise.all([
+    db.select().from(t.users).orderBy(asc(t.users.name)),
+    listApplications(),
+    db.select().from(t.userApplications),
+  ]);
+  const appsOf = (uid: string) => new Set(links.filter((l) => l.userId === uid).map((l) => l.applicationId));
   return (
     <div className="max-w-5xl">
       <PageHeader title="Users" actions={<Link href="/admin/settings" className="btn-ghost">Back</Link>} />
@@ -30,6 +36,14 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
               <label className="flex items-center gap-1"><input type="checkbox" name="reset2fa" /> Reset 2FA</label>
               <SubmitButton className="btn-ghost btn-sm">Save</SubmitButton>
             </div>
+            <fieldset className="md:col-span-5"><input type="hidden" name="appsSubmitted" value="1" />
+              <legend className="label">Applications this user can see {u.role === "ADMIN" && <span className="font-normal text-ink-500">(administrators see all)</span>}</legend>
+              <div className="flex flex-wrap gap-3 text-xs">{apps.map((a) => (
+                <label key={a.id} className="flex items-center gap-1"><input type="checkbox" name="applicationIds" value={a.id} defaultChecked={appsOf(u.id).has(a.id)} />
+                  <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />{a.name}{a.dataClass === "HEALTH" && <span className="text-amber-700"> (health)</span>}</label>
+              ))}</div>
+              <p className="mt-1 text-[11px] text-ink-500">Staff with nothing ticked see business applications only. Health applications must be ticked explicitly.</p>
+            </fieldset>
             <p className="text-xs text-ink-500 md:col-span-5"><Badge tone={u.totpEnabled ? "green" : "amber"}>{u.totpEnabled ? "2FA on" : "2FA off"}</Badge> Last login {fmtDate(u.lastLoginAt, true)}{u.lockedUntil && u.lockedUntil > new Date() ? " · locked" : ""}</p>
           </form>
         ))}

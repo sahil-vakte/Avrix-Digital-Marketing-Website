@@ -4,12 +4,13 @@ import { redirect } from "next/navigation";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, t } from "@/db";
 import { requireUser } from "@/lib/auth";
+import { allowedApplications, canSeeApplication } from "@/lib/apps";
 import { audit } from "@/lib/audit";
 import { getSetting } from "@/lib/settings";
 import { materializeCampaign } from "@/lib/audience";
 import { renderEmail } from "@/lib/email-render";
 import { contactMergeData } from "@/lib/merge";
-import { newMessageId, sendMail } from "@/lib/mailer";
+import { footerFor, newMessageId, senderFor, sendMail } from "@/lib/mailer";
 import { randomToken } from "@/lib/crypto";
 import { normaliseEmail, isValidSyntax } from "@/lib/email-validate";
 import { zonedToUtc } from "@/lib/time";
@@ -19,8 +20,9 @@ import { str } from "@/lib/utils";
 const back = (id: string, anchor = "", q = "") => redirect(`/admin/campaigns/${id}${q ? `?${q}` : ""}${anchor ? `#${anchor}` : ""}`);
 
 async function editable(id: string) {
+  const user = await requireUser();
   const c = await db.query.campaigns.findFirst({ where: eq(t.campaigns.id, id) });
-  if (!c) redirect("/admin/campaigns");
+  if (!c || !(await canSeeApplication(user, c.applicationId))) redirect("/admin/campaigns");
   if (!["DRAFT", "PENDING_APPROVAL"].includes(c.status)) back(id, "", "error=Campaign+is+already+launched");
   return c;
 }
@@ -30,8 +32,11 @@ export async function createCampaign(fd: FormData) {
   const tplId = str(fd.get("templateId"));
   const tpl = tplId ? await db.query.templates.findFirst({ where: eq(t.templates.id, tplId) }) : null;
   const listIds = fd.getAll("listIds").map(String).filter(Boolean);
+  const app = (await allowedApplications(user)).find((a) => a.id === str(fd.get("applicationId")));
+  if (!app || !app.campaignsAllowed || app.dataClass === "HEALTH") redirect("/admin/campaigns/new?error=Choose+an+application+that+allows+campaigns");
   const [c] = await db.insert(t.campaigns).values({
-    name: str(fd.get("name")) || "Untitled campaign", fromName: env.mail.fromName, replyTo: env.mail.replyTo || null,
+    applicationId: app.id,
+    name: str(fd.get("name")) || "Untitled campaign", fromName: app.fromName || env.mail.fromName, replyTo: app.replyTo || env.mail.replyTo || null,
     subjectA: tpl?.subject ?? "", html: tpl?.html ?? "", listIds, createdById: user.id,
   }).returning();
   await audit(user.id, "create", "campaign", c.id);
@@ -126,7 +131,7 @@ export async function sendTest(fd: FormData) {
   const to = normaliseEmail(str(fd.get("to")) || user.email);
   if (!isValidSyntax(to)) back(id, "content", "error=Enter+a+valid+test+address");
   const c = await db.query.campaigns.findFirst({ where: eq(t.campaigns.id, id), with: { steps: true } });
-  if (!c) redirect("/admin/campaigns");
+  if (!c || !(await canSeeApplication(user, c.applicationId))) redirect("/admin/campaigns");
   const stepOrder = Number(fd.get("step") ?? 0);
   const step = stepOrder ? c.steps.find((s) => s.order === stepOrder) : null;
   const contactId = str(fd.get("contactId"));
@@ -134,11 +139,11 @@ export async function sendTest(fd: FormData) {
   const data = contact ? contactMergeData(contact) : { first_name: "Jane", last_name: "Smith", business_name: "Example Ltd", city: "Leicester", email: to };
   const token = randomToken();
   const subject = `[TEST] ${step?.subject || (stepOrder ? `Re: ${c.subjectA}` : c.subjectA)}`;
-  const r = await renderEmail({ bodyHtml: step?.html ?? c.html, subject, data, token, trackOpens: false, trackClicks: false, includeUnsubscribe: true });
+  const r = await renderEmail({ bodyHtml: step?.html ?? c.html, subject, data, token, trackOpens: false, trackClicks: false, includeUnsubscribe: true, company: await footerFor(c.applicationId) });
   try {
     const messageId = newMessageId(token);
-    await sendMail({ to, subject: r.subject, html: r.html, text: r.text, fromName: c.fromName, replyTo: c.replyTo, messageId, headers: r.headers });
-    await db.insert(t.emailMessages).values({ kind: "TEST", campaignId: id, toEmail: to, subject: r.subject, token, status: "SENT", sentAt: new Date(), messageId });
+    await sendMail({ to, subject: r.subject, html: r.html, text: r.text, fromName: c.fromName, replyTo: c.replyTo, messageId, headers: r.headers }, await senderFor(c.applicationId));
+    await db.insert(t.emailMessages).values({ kind: "TEST", campaignId: id, applicationId: c.applicationId, toEmail: to, subject: r.subject, token, status: "SENT", sentAt: new Date(), messageId });
   } catch (e) {
     back(id, "content", `error=${encodeURIComponent("Test failed: " + (e as Error).message)}`);
   }
@@ -158,7 +163,8 @@ export async function launchCampaign(fd: FormData) {
     back(id, "review", "ok=Submitted+for+admin+approval");
   }
   if (user.role !== "ADMIN" && c.status === "PENDING_APPROVAL") back(id, "review", "error=Waiting+for+an+admin+to+approve");
-  const r = await materializeCampaign(id);
+  let r: Awaited<ReturnType<typeof materializeCampaign>>;
+  try { r = await materializeCampaign(id); } catch (e) { back(id, "review", `error=${encodeURIComponent((e as Error).message)}`); throw e; }
   if (user.role === "ADMIN" && c.status === "PENDING_APPROVAL") await db.update(t.campaigns).set({ approvedById: user.id }).where(eq(t.campaigns.id, id));
   await audit(user.id, "launch", "campaign", id, r);
   back(id, "", `ok=${encodeURIComponent(`Launched: ${r.eligible} recipient(s) queued, ${r.excluded} excluded`)}`);
@@ -169,7 +175,7 @@ export async function setCampaignStatus(fd: FormData) {
   const id = str(fd.get("id"));
   const op = str(fd.get("op"));
   const c = await db.query.campaigns.findFirst({ where: eq(t.campaigns.id, id) });
-  if (!c) return;
+  if (!c || !(await canSeeApplication(user, c.applicationId))) return;
   if (op === "pause" && ["SENDING", "SCHEDULED"].includes(c.status)) await db.update(t.campaigns).set({ status: "PAUSED", pauseReason: `Paused by ${user.name}` }).where(eq(t.campaigns.id, id));
   if (op === "resume" && c.status === "PAUSED") await db.update(t.campaigns).set({ status: c.scheduledAt && c.scheduledAt > new Date() ? "SCHEDULED" : "SENDING", pauseReason: null }).where(eq(t.campaigns.id, id));
   if (op === "cancel" && !["COMPLETED", "CANCELLED"].includes(c.status)) {
@@ -186,9 +192,9 @@ export async function setCampaignStatus(fd: FormData) {
 export async function duplicateCampaign(fd: FormData) {
   const user = await requireUser();
   const c = await db.query.campaigns.findFirst({ where: eq(t.campaigns.id, str(fd.get("id"))), with: { steps: true } });
-  if (!c) return;
+  if (!c || !(await canSeeApplication(user, c.applicationId))) return;
   const [copy] = await db.insert(t.campaigns).values({
-    name: `${c.name} (copy)`, fromName: c.fromName, replyTo: c.replyTo, subjectA: c.subjectA, subjectB: c.subjectB, abTestPercent: c.abTestPercent,
+    applicationId: c.applicationId, name: `${c.name} (copy)`, fromName: c.fromName, replyTo: c.replyTo, subjectA: c.subjectA, subjectB: c.subjectB, abTestPercent: c.abTestPercent,
     abWinnerMetric: c.abWinnerMetric, abWaitHours: c.abWaitHours, html: c.html, listIds: c.listIds, sendDays: c.sendDays, sendStartHour: c.sendStartHour,
     sendEndHour: c.sendEndHour, useRecipientTz: c.useRecipientTz, trackOpens: c.trackOpens, trackClicks: c.trackClicks, createdById: user.id,
   }).returning();
@@ -200,7 +206,7 @@ export async function deleteCampaign(fd: FormData) {
   const user = await requireUser();
   const id = str(fd.get("id"));
   const c = await db.query.campaigns.findFirst({ where: eq(t.campaigns.id, id) });
-  if (!c) return;
+  if (!c || !(await canSeeApplication(user, c.applicationId))) return;
   if (!["DRAFT", "PENDING_APPROVAL", "CANCELLED", "COMPLETED"].includes(c.status)) back(id, "", "error=Pause+or+cancel+the+campaign+first");
   if (c.status !== "DRAFT" && user.role !== "ADMIN") back(id, "", "error=Only+admins+can+delete+sent+campaigns");
   await db.delete(t.campaigns).where(eq(t.campaigns.id, id));

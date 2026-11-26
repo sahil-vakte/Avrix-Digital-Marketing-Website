@@ -1,6 +1,9 @@
 // SMTP transport (Google Workspace by default) — the only way mail leaves the system.
 import nodemailer, { type Transporter } from "nodemailer";
+import { eq } from "drizzle-orm";
 import { env } from "./env";
+import { db, t } from "../db";
+import { decrypt } from "./crypto";
 
 let transporter: Transporter | null = null;
 
@@ -40,11 +43,43 @@ export type OutgoingMail = {
   headers?: Record<string, string>;
 };
 
-export async function sendMail(m: OutgoingMail) {
-  const info = await getTransport().sendMail({
-    from: { name: m.fromName || env.mail.fromName, address: env.mail.fromAddress },
+/** Sending identity for an application: its own mailbox if configured, else the default transport with its From address. */
+export type Sender = { transport?: Transporter; fromName?: string | null; fromAddress?: string | null; replyTo?: string | null };
+
+const appTransports = new Map<string, { at: number; sender: Sender }>();
+
+export async function senderFor(applicationId: string | null | undefined): Promise<Sender> {
+  if (!applicationId) return {};
+  const hit = appTransports.get(applicationId);
+  if (hit && Date.now() - hit.at < 60_000) return hit.sender;
+  const app = await db.query.applications.findFirst({ where: eq(t.applications.id, applicationId) });
+  let sender: Sender = {};
+  if (app) {
+    sender = { fromName: app.fromName, fromAddress: app.fromAddress, replyTo: app.replyTo };
+    if (app.smtpHost && app.smtpUser && app.smtpPassEnc) {
+      sender.transport = nodemailer.createTransport({
+        host: app.smtpHost, port: app.smtpPort ?? (app.smtpSecure ? 465 : 587), secure: app.smtpSecure,
+        auth: { user: app.smtpUser, pass: decrypt(app.smtpPassEnc) }, pool: true, maxConnections: 1, maxMessages: 50,
+        connectionTimeout: 20_000, greetingTimeout: 15_000, socketTimeout: 60_000, tls: { minVersion: "TLSv1.2" },
+      } as nodemailer.TransportOptions);
+      sender.fromAddress ||= app.smtpUser;
+    }
+  }
+  appTransports.set(applicationId, { at: Date.now(), sender });
+  return sender;
+}
+
+/** Company name and postal address for an application's email footer. */
+export async function footerFor(applicationId: string | null | undefined) {
+  const app = applicationId ? await db.query.applications.findFirst({ where: eq(t.applications.id, applicationId) }) : null;
+  return { legalName: app?.legalName || env.company.legalName, address: app?.postalAddress || env.company.address, replyTo: app?.replyTo || env.mail.replyTo };
+}
+
+export async function sendMail(m: OutgoingMail, sender: Sender = {}) {
+  const info = await (sender.transport ?? getTransport()).sendMail({
+    from: { name: m.fromName || sender.fromName || env.mail.fromName, address: sender.fromAddress || env.mail.fromAddress },
     to: m.to,
-    replyTo: m.replyTo || env.mail.replyTo || undefined,
+    replyTo: m.replyTo || sender.replyTo || env.mail.replyTo || undefined,
     subject: m.subject,
     html: m.html,
     text: m.text,
@@ -56,8 +91,8 @@ export async function sendMail(m: OutgoingMail) {
   return info;
 }
 
-export function newMessageId(token: string) {
-  const domain = (env.mail.fromAddress.split("@")[1] || "avrix.local").toLowerCase();
+export function newMessageId(token: string, fromAddress?: string | null) {
+  const domain = ((fromAddress || env.mail.fromAddress).split("@")[1] || "avrix.local").toLowerCase();
   return `<${token}.${Date.now().toString(36)}@${domain}>`;
 }
 

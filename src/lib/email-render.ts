@@ -16,6 +16,8 @@ export type RenderOptions = {
   /** "branded" = Avrix header, card and footer (campaigns, confirmations, alerts).
    *  "letter"   = plain personal-email look (one-to-one replies), so threads read naturally. */
   layout?: "branded" | "letter";
+  /** Footer identity for the sending application (defaults to COMPANY_* in .env). */
+  company?: { legalName: string; address: string; replyTo?: string | null };
 };
 
 export const trackingUrls = (token: string) => ({
@@ -27,6 +29,7 @@ export const trackingUrls = (token: string) => ({
 
 export async function renderEmail(o: RenderOptions) {
   const urls = trackingUrls(o.token);
+  const company = o.company ?? { legalName: env.company.legalName, address: env.company.address, replyTo: env.mail.replyTo };
   const subject = applyMerge(o.subject, o.data).replace(/[\r\n]+/g, " ").trim();
   let body = applyMerge(o.bodyHtml, o.data, true);
 
@@ -44,17 +47,17 @@ export async function renderEmail(o: RenderOptions) {
   const pixel = o.trackOpens ? `<img src="${urls.open}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />` : "";
   const layout = o.layout ?? "branded";
   const html = layout === "letter"
-    ? letterHtml({ subject, body, pixel, unsubscribeUrl: o.includeUnsubscribe ? urls.unsubscribe : null })
-    : brandedHtml({ subject, body, pixel, unsubscribeUrl: o.includeUnsubscribe ? urls.unsubscribe : null });
+    ? letterHtml({ subject, body, pixel, unsubscribeUrl: o.includeUnsubscribe ? urls.unsubscribe : null, company })
+    : brandedHtml({ subject, body, pixel, unsubscribeUrl: o.includeUnsubscribe ? urls.unsubscribe : null, company });
 
   const textBody = convert(body, { wordwrap: 78, selectors: [{ selector: "a", options: { hideLinkHrefIfSameAsText: true } }, { selector: "img", format: "skip" }] });
   const text = o.includeUnsubscribe
-    ? `${textBody}\n\n--\n${env.company.legalName}${env.company.address ? ", " + env.company.address : ""}\nUnsubscribe: ${urls.unsubscribe}\n`
+    ? `${textBody}\n\n--\n${company.legalName}${company.address ? ", " + company.address : ""}\nUnsubscribe: ${urls.unsubscribe}\n`
     : textBody;
 
   const headers: Record<string, string> = {};
   if (o.includeUnsubscribe) {
-    const mailto = env.mail.replyTo ? `, <mailto:${env.mail.replyTo}?subject=unsubscribe>` : "";
+    const mailto = company.replyTo ? `, <mailto:${company.replyTo}?subject=unsubscribe>` : "";
     headers["List-Unsubscribe"] = `<${urls.oneClick}>${mailto}`;
     headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
@@ -67,9 +70,11 @@ export async function renderEmail(o: RenderOptions) {
 // No images are required for the design (logo is HTML), so it still looks right with images off.
 const BRAND = { name: "Avrix UK & Europe", blue: "#2563eb", cyan: "#22d3ee", navy: "#0a1230", ink: "#0f172a", muted: "#64748b", line: "#e5e9f2", bg: "#f2f5fb" };
 
-function complianceFooter(unsubscribeUrl: string | null, dark: boolean) {
+type Company = { legalName: string; address: string; replyTo?: string | null };
+
+function complianceFooter(unsubscribeUrl: string | null, dark: boolean, company: Company) {
   const c = dark ? "#94a3b8" : BRAND.muted;
-  const addr = `${esc(env.company.legalName)}${env.company.address ? " · " + esc(env.company.address) : ""}`;
+  const addr = `${esc(company.legalName)}${company.address ? " · " + esc(company.address) : ""}`;
   return unsubscribeUrl
     ? `${addr}<br>You are receiving this email because we believe our services are relevant to your business.
 <a href="${unsubscribeUrl}" style="color:${c};text-decoration:underline">Unsubscribe</a> and we will not email you again.`
@@ -107,7 +112,9 @@ const HEAD_STYLE = `
     .em-foot,.em-foot a{color:#94a3b8!important}
   }`;
 
-function brandedHtml({ subject, body, pixel, unsubscribeUrl }: { subject: string; body: string; pixel: string; unsubscribeUrl: string | null }) {
+function brandedHtml({ subject, body, pixel, unsubscribeUrl, company }: { subject: string; body: string; pixel: string; unsubscribeUrl: string | null; company: Company }) {
+  // Another application's email carries its own name instead of the Avrix UK & Europe wordmark.
+  const ownBrand = company.legalName !== env.company.legalName;
   const site = env.appUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
   return `<!doctype html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"><title>${esc(subject)}</title>
@@ -119,8 +126,8 @@ ${preheader(body)}
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="em-wrap" style="width:600px;max-width:600px">
     <tr><td class="em-head" style="padding:0 8px 18px">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td style="width:34px;height:34px;border-radius:9px;background:${BRAND.blue};background-image:linear-gradient(135deg,${BRAND.blue},${BRAND.cyan});text-align:center;vertical-align:middle;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;color:#ffffff;line-height:34px">A</td>
-        <td class="em-brand" style="padding-left:10px;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;color:${BRAND.ink};letter-spacing:-.2px">Avrix <span style="font-size:10px;letter-spacing:2px;color:#0891b2;text-transform:uppercase">UK &amp; Europe</span></td>
+        <td style="width:34px;height:34px;border-radius:9px;background:${BRAND.blue};background-image:linear-gradient(135deg,${BRAND.blue},${BRAND.cyan});text-align:center;vertical-align:middle;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;color:#ffffff;line-height:34px">${ownBrand ? esc(company.legalName.trim().charAt(0).toUpperCase() || "A") : "A"}</td>
+        <td class="em-brand" style="padding-left:10px;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;color:${BRAND.ink};letter-spacing:-.2px">${ownBrand ? esc(company.legalName) : `Avrix <span style="font-size:10px;letter-spacing:2px;color:#0891b2;text-transform:uppercase">UK &amp; Europe</span>`}</td>
       </tr></table>
     </td></tr>
     <tr><td class="em-card" style="background:#ffffff;border:1px solid ${BRAND.line};border-radius:16px;overflow:hidden">
@@ -132,7 +139,7 @@ ${body}
       </tr></table>
     </td></tr>
     <tr><td class="em-foot" style="padding:22px 12px 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:${BRAND.muted};text-align:center">
-      ${complianceFooter(unsubscribeUrl, false)}
+      ${complianceFooter(unsubscribeUrl, false, company)}
       <br><a href="${env.appUrl}" style="color:${BRAND.muted};text-decoration:none">${esc(site)}</a>
     </td></tr>
   </table>
@@ -140,9 +147,9 @@ ${body}
 </table>${pixel}</body></html>`;
 }
 
-function letterHtml({ subject, body, pixel, unsubscribeUrl }: { subject: string; body: string; pixel: string; unsubscribeUrl: string | null }) {
+function letterHtml({ subject, body, pixel, unsubscribeUrl, company }: { subject: string; body: string; pixel: string; unsubscribeUrl: string | null; company: Company }) {
   const footer = unsubscribeUrl
-    ? `<p class="em-foot" style="margin:28px 0 0;padding-top:14px;border-top:1px solid ${BRAND.line};font-size:12px;line-height:18px;color:${BRAND.muted}">${complianceFooter(unsubscribeUrl, false)}</p>`
+    ? `<p class="em-foot" style="margin:28px 0 0;padding-top:14px;border-top:1px solid ${BRAND.line};font-size:12px;line-height:18px;color:${BRAND.muted}">${complianceFooter(unsubscribeUrl, false, company)}</p>`
     : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${esc(subject)}</title><style>${HEAD_STYLE}</style></head>
 <body style="margin:0;padding:0;background:#ffffff">

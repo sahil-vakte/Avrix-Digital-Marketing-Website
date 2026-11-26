@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, t } from "@/db";
 import { requireUser, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
@@ -40,15 +40,21 @@ export async function testSmtp() {
 export async function saveStage(fd: FormData) {
   const user = await requireUser({ admin: true });
   const id = str(fd.get("id"));
+  const applicationId = str(fd.get("applicationId"));
+  const back = `/admin/settings/applications?id=${encodeURIComponent(applicationId)}#pipeline`;
+  if (!applicationId) redirect("/admin/settings/applications");
   const v = { name: str(fd.get("name")), order: Number(fd.get("order") || 0), color: str(fd.get("color")) || "#3563f2", isWon: fd.get("isWon") === "on", isLost: fd.get("isLost") === "on" };
+  const inApp = (sid: string) => and(eq(t.pipelineStages.id, sid), eq(t.pipelineStages.applicationId, applicationId));
   if (fd.get("delete") === "1" && id) {
-    const first = await db.query.pipelineStages.findFirst({ where: (s, { ne }) => ne(s.id, id), orderBy: (s, { asc }) => asc(s.order) });
-    if (first) await db.update(t.leads).set({ stageId: first.id }).where(eq(t.leads.stageId, id));
-    await db.delete(t.pipelineStages).where(eq(t.pipelineStages.id, id));
-  } else if (id) await db.update(t.pipelineStages).set(v).where(eq(t.pipelineStages.id, id));
-  else if (v.name) await db.insert(t.pipelineStages).values(v);
-  await audit(user.id, "update", "pipeline_stage", id || null, v);
-  revalidatePath("/admin/settings");
+    const first = await db.query.pipelineStages.findFirst({ where: (s, { ne, and: a, eq: e }) => a(ne(s.id, id), e(s.applicationId, applicationId)), orderBy: (s, { asc }) => asc(s.order) });
+    if (!first) redirect(`${back.replace("#pipeline", "")}&error=An+application+needs+at+least+one+stage`);
+    await db.update(t.leads).set({ stageId: first.id }).where(eq(t.leads.stageId, id));
+    await db.delete(t.pipelineStages).where(inApp(id));
+  } else if (id) await db.update(t.pipelineStages).set(v).where(inApp(id));
+  else if (v.name) await db.insert(t.pipelineStages).values({ ...v, applicationId }).onConflictDoNothing();
+  await audit(user.id, "update", "pipeline_stage", id || null, { ...v, applicationId });
+  revalidatePath("/admin/settings/applications");
+  redirect(back);
 }
 
 export async function saveCountry(fd: FormData) {
@@ -73,6 +79,13 @@ export async function saveUser(fd: FormData) {
   } else {
     if (pw.length < 12) redirect("/admin/settings/users?error=Temporary+password+must+be+at+least+12+characters");
     await db.insert(t.users).values({ email, name: str(fd.get("name")), role, passwordHash: await hashPassword(pw) }).onConflictDoNothing();
+  }
+  // Application access (staff only; administrators always see every application).
+  const target = id ? { id } : await db.query.users.findFirst({ where: eq(t.users.email, email), columns: { id: true } });
+  if (target && fd.get("appsSubmitted") === "1") {
+    const appIds = fd.getAll("applicationIds").map(String).filter(Boolean);
+    await db.delete(t.userApplications).where(eq(t.userApplications.userId, target.id));
+    if (appIds.length) await db.insert(t.userApplications).values(appIds.map((applicationId) => ({ userId: target.id, applicationId }))).onConflictDoNothing();
   }
   await audit(admin.id, id ? "update" : "create", "user", id || email, { role });
   redirect("/admin/settings/users?ok=Saved");

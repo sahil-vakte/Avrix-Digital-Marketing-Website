@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db, t } from "@/db";
 import { getSession } from "@/lib/auth";
+import { appScope, inScopeOrShared } from "@/lib/apps";
 import { audit } from "@/lib/audit";
 import { toCsv } from "@/lib/utils";
 
@@ -9,7 +10,8 @@ export async function GET(req: NextRequest) {
   const s = await getSession();
   if (!s || s.role !== "ADMIN") return new Response("Forbidden", { status: 403 });
   const sp = req.nextUrl.searchParams;
-  const c: SQL[] = [];
+  const scope = await appScope({ id: s.uid, role: s.role }, sp.get("app"));
+  const c: SQL[] = [inScopeOrShared(t.contacts.applicationId, scope, { role: s.role })];
   if (sp.get("q")) c.push(or(ilike(t.contacts.email, `%${sp.get("q")}%`), ilike(t.contacts.businessName, `%${sp.get("q")}%`))!);
   if (sp.get("country")) c.push(eq(t.contacts.country, sp.get("country")!));
   if (sp.get("type")) c.push(eq(t.contacts.businessType, sp.get("type") as never));

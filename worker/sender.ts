@@ -5,7 +5,7 @@ import { db, t } from "../src/db";
 import type { EmailMessage } from "../src/db/schema";
 import { env } from "../src/lib/env";
 import { capacity } from "../src/lib/caps";
-import { classifySmtpError, newMessageId, sendMail } from "../src/lib/mailer";
+import { classifySmtpError, footerFor, newMessageId, senderFor, sendMail } from "../src/lib/mailer";
 import { renderEmail } from "../src/lib/email-render";
 import { contactMergeData } from "../src/lib/merge";
 import { ineligibleReason, type EligibilityContext } from "../src/lib/compliance";
@@ -120,9 +120,12 @@ async function deliver(m: EmailMessage, c: typeof t.campaigns.$inferSelect | nul
       if (m.kind === "SYSTEM" || m.kind === "TEST") { trackOpens = false; trackClicks = false; }
     }
 
+    const applicationId = m.applicationId ?? c?.applicationId ?? null;
+    const sender = await senderFor(applicationId);
     const rendered = await renderEmail({
       bodyHtml: html, subject, data, token: m.token, trackOpens, trackClicks, includeUnsubscribe,
       layout: m.kind === "ONE_TO_ONE" ? "letter" : "branded",
+      company: includeUnsubscribe ? await footerFor(applicationId) : undefined,
       linkId: async (url) => {
         const campaignId = m.campaignId ?? null;
         const found = await db.query.links.findFirst({
@@ -135,11 +138,11 @@ async function deliver(m: EmailMessage, c: typeof t.campaigns.$inferSelect | nul
       },
     });
     subject = rendered.subject;
-    const messageId = newMessageId(m.token);
+    const messageId = newMessageId(m.token, sender.fromAddress);
     await sendMail({
       to: m.toEmail, subject, html: rendered.html, text: rendered.text, fromName, replyTo,
       messageId, inReplyTo, references: inReplyTo, headers: rendered.headers,
-    });
+    }, sender);
 
     const sentAt = new Date();
     await db.update(t.emailMessages).set({ status: "SENT", sentAt, messageId, subject, lastError: null }).where(eq(t.emailMessages.id, m.id));
@@ -159,7 +162,7 @@ async function afterCampaignSend(m: EmailMessage, c: typeof t.campaigns.$inferSe
   const next = steps.find((s) => s.order === m.stepOrder + 1);
   if (m.stepOrder === 0) {
     await db.update(t.campaignRecipients).set({ status: next ? "ACTIVE" : "COMPLETED" }).where(eq(t.campaignRecipients.id, m.recipientId!));
-    for (const l of await leadsForEmail(m.toEmail)) {
+    for (const l of await leadsForEmail(m.toEmail, c.applicationId)) {
       await addActivity(l.id, "email_sent", `Campaign “${c.name}” sent`, { campaignId: c.id });
       await moveLeadToStageIfEarlier(l.id, "Contacted");
     }
@@ -173,7 +176,7 @@ async function afterCampaignSend(m: EmailMessage, c: typeof t.campaigns.$inferSe
       await db.query.emailMessages.findFirst({ where: and(eq(t.emailMessages.recipientId, m.recipientId!), eq(t.emailMessages.stepOrder, 0)) });
     const baseSubject = (first?.subject ?? m.subject).replace(/^re:\s*/i, "");
     await db.insert(t.emailMessages).values({
-      kind: "FOLLOW_UP", campaignId: c.id, recipientId: m.recipientId, stepOrder: next.order, toEmail: m.toEmail,
+      kind: "FOLLOW_UP", campaignId: c.id, applicationId: c.applicationId, recipientId: m.recipientId, stepOrder: next.order, toEmail: m.toEmail,
       subject: next.subject?.trim() ? next.subject : `Re: ${baseSubject}`,
       token: randomToken(), scheduledFor: new Date(sentAt.getTime() + next.delayDays * 86_400_000),
       inReplyTo: first?.messageId ?? messageId,

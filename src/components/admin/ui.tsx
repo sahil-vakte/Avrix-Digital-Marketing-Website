@@ -70,3 +70,23 @@ export function Flash({ ok, error }: { ok?: string; error?: string }) {
   if (!ok && !error) return null;
   return <div className={cn("mb-4 rounded-lg p-3 text-sm", error ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700")} role="status">{error ?? ok}</div>;
 }
+
+export function AppBadge({ app, className }: { app: { name: string; color: string } | null | undefined; className?: string }) {
+  if (!app) return <span className="text-xs text-ink-500">—</span>;
+  return (
+    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-ink-700", className)}>
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: app.color }} aria-hidden />
+      <span className="truncate">{app.name}</span>
+    </span>
+  );
+}
+
+/** Shows which application the page is scoped to, with a quick way back to all applications. */
+export function ScopeNote({ selected, count }: { selected: { name: string; color: string } | null; count: number }) {
+  return (
+    <p className="mb-4 flex flex-wrap items-center gap-2 text-xs text-ink-500">
+      Showing {selected ? <AppBadge app={selected} /> : <b className="text-ink-700">all {count} applications</b>}
+      <span>· change this with the Application switcher in the sidebar</span>
+    </p>
+  );
+}

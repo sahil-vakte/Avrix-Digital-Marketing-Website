@@ -148,6 +148,7 @@ async function handle(p: ParsedMail) {
   const { lead, created } = sent.leadId
     ? { lead: (await db.query.leads.findFirst({ where: eq(t.leads.id, sent.leadId) }))!, created: false }
     : await ensureLead({
+        applicationId: sent.campaign?.applicationId ?? sent.applicationId ?? null,
         email: fromAddr, name: [contact?.firstName, contact?.lastName].filter(Boolean).join(" ") || fromName || fromAddr,
         businessName: contact?.businessName, contactId: contact?.id ?? null, source: "CAMPAIGN_REPLY", stage: "Replied",
         phone: contact?.phone, country: contact?.country,

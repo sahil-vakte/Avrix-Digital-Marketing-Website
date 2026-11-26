@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db, t } from "@/db";
+import { canSeeApplication } from "@/lib/apps";
 import { requireUser } from "@/lib/auth";
 import { Flash, PageHeader } from "@/components/admin/ui";
 import { Builder } from "./Builder";
@@ -14,7 +15,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
   const { id } = await params;
   const sp = await searchParams;
   const c = await db.query.campaigns.findFirst({ where: eq(t.campaigns.id, id) });
-  if (!c) notFound();
+  if (!c || !(await canSeeApplication(user, c.applicationId))) notFound();
   const draft = c.status === "DRAFT" || c.status === "PENDING_APPROVAL";
   return (
     <div>

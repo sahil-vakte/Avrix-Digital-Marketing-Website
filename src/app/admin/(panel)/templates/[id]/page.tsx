@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db, t } from "@/db";
+import { requireUser } from "@/lib/auth";
+import { canSeeApplication } from "@/lib/apps";
 import { Card, Flash, PageHeader } from "@/components/admin/ui";
 import { ConfirmButton, SubmitButton } from "@/components/admin/buttons";
 import { RichEditor } from "@/components/admin/RichEditor";
@@ -12,8 +14,9 @@ export const metadata = { title: "Template" };
 export default async function TemplatePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string }> }) {
   const { id } = await params;
   const { ok } = await searchParams;
+  const user = await requireUser();
   const tpl = id === "new" ? null : await db.query.templates.findFirst({ where: eq(t.templates.id, id) });
-  if (id !== "new" && !tpl) notFound();
+  if (id !== "new" && (!tpl || (tpl.applicationId && !(await canSeeApplication(user, tpl.applicationId))))) notFound();
   return (
     <div className="max-w-4xl">
       <PageHeader title={tpl ? tpl.name : "New template"} actions={<Link href="/admin/templates" className="btn-ghost">Back</Link>} />

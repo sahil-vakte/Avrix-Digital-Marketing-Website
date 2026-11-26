@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   const end = new Date(start.getTime() + s.slotMinutes * 60_000);
   const { lead } = await ensureLead({ email, name: b.name, businessName: b.businessName || null, source: "BOOKING", stage: "Meeting booked", phone: b.phone || null, utm: b.utm, message: b.topic || null });
   await moveLeadToStageIfEarlier(lead.id, "Meeting booked");
-  const [booking] = await db.insert(t.bookings).values({ leadId: lead.id, name: b.name, email, phone: b.phone || null, topic: b.topic || null, startsAt: start, endsAt: end }).returning();
+  const [booking] = await db.insert(t.bookings).values({ applicationId: lead.applicationId, leadId: lead.id, name: b.name, email, phone: b.phone || null, topic: b.topic || null, startsAt: start, endsAt: end }).returning();
   const when = fmtInTz(start, s.timezone, { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) + " (UK time)";
   await addActivity(lead.id, "meeting", `Call booked for ${when}`, { bookingId: booking.id, topic: b.topic });
 

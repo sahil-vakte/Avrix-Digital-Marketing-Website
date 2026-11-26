@@ -5,6 +5,7 @@ import { pool } from "../src/db";
 import { sendNext } from "./sender";
 import { tick, releaseStuck } from "./scheduler";
 import { pollMailbox } from "./imap";
+import { deliverWebhooks } from "./webhooks";
 import { log } from "./log";
 
 let stopping = false;
@@ -28,6 +29,7 @@ async function sendLoop() {
 async function schedulerLoop() {
   while (!stopping) {
     try { await tick(); } catch (e) { log.error("scheduler", e); }
+    try { await deliverWebhooks(); } catch (e) { log.error("webhooks", e); }
     await sleep(15_000);
   }
 }

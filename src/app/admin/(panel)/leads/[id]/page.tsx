@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { notFound } from "next/navigation";
-import { and, asc, desc, eq, ilike, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, ne, or } from "drizzle-orm";
 import { db, t } from "@/db";
 import { requireUser } from "@/lib/auth";
-import { Badge, Card, Flash, PageHeader } from "@/components/admin/ui";
+import { AppBadge, Badge, Card, Flash, PageHeader } from "@/components/admin/ui";
+import { leadForUser, recordUrl, stagesFor, DATA_CLASS_LABEL } from "@/lib/apps";
 import { ConfirmButton, SubmitButton } from "@/components/admin/buttons";
 import { fmtDate, money } from "@/lib/utils";
 import { countryName } from "@/lib/countries";
@@ -19,42 +21,48 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
   const user = await requireUser();
   const { id } = await params;
   const sp = await searchParams;
+  await leadForUser(user, id); // 404 unless this user may see the lead's application
   const lead = await db.query.leads.findFirst({
     where: eq(t.leads.id, id),
-    with: { stage: true, owner: true, contact: true, notes: { with: { author: true }, orderBy: desc(t.notes.createdAt) }, tasks: { with: { assignee: true }, orderBy: asc(t.tasks.dueAt) }, activities: { orderBy: desc(t.activities.createdAt), limit: 200 }, bookings: { orderBy: desc(t.bookings.startsAt) } },
+    with: { application: true, stage: true, owner: true, contact: true, notes: { with: { author: true }, orderBy: desc(t.notes.createdAt) }, tasks: { with: { assignee: true }, orderBy: asc(t.tasks.dueAt) }, activities: { orderBy: desc(t.activities.createdAt), limit: 200 }, bookings: { orderBy: desc(t.bookings.startsAt) } },
   });
   if (!lead) notFound();
-  const domain = lead.email.split("@")[1];
+  const domain = lead.email.split("@")[1] ?? "";
   const freeMail = ["gmail.com", "outlook.com", "hotmail.com", "yahoo.com", "icloud.com", "hotmail.co.uk", "yahoo.co.uk", "live.com", "aol.com", "btinternet.com"].includes(domain);
   const [stages, users, messages, templates, dupes, suppressed] = await Promise.all([
-    db.select().from(t.pipelineStages).orderBy(asc(t.pipelineStages.order)),
+    stagesFor(lead.applicationId),
     db.select({ id: t.users.id, name: t.users.name }).from(t.users).where(eq(t.users.active, true)),
-    db.query.emailMessages.findMany({ where: and(eq(t.emailMessages.toEmail, lead.email), ne(t.emailMessages.kind, "SYSTEM")), with: { campaign: true }, orderBy: desc(t.emailMessages.createdAt), limit: 50 }),
-    db.select().from(t.templates).orderBy(asc(t.templates.name)),
-    db.select().from(t.leads).where(and(ne(t.leads.id, id), or(ilike(t.leads.email, lead.email), freeMail ? undefined : ilike(t.leads.email, `%@${domain}`)))).limit(5),
-    db.query.suppressions.findFirst({ where: eq(t.suppressions.email, lead.email) }),
+    lead.email ? db.query.emailMessages.findMany({ where: and(eq(t.emailMessages.toEmail, lead.email), ne(t.emailMessages.kind, "SYSTEM")), with: { campaign: true }, orderBy: desc(t.emailMessages.createdAt), limit: 50 }) : Promise.resolve([]),
+    db.select().from(t.templates).where(or(eq(t.templates.applicationId, lead.applicationId), isNull(t.templates.applicationId))).orderBy(asc(t.templates.name)),
+    lead.email ? db.select().from(t.leads).where(and(ne(t.leads.id, id), eq(t.leads.applicationId, lead.applicationId), or(ilike(t.leads.email, lead.email), freeMail || !domain ? undefined : ilike(t.leads.email, `%@${domain}`)))).limit(5) : Promise.resolve([]),
+    lead.email ? db.query.suppressions.findFirst({ where: eq(t.suppressions.email, lead.email) }) : Promise.resolve(undefined),
   ]);
   const timeline = [
     ...lead.activities.map((a) => ({ at: a.createdAt, icon: ICON[a.type] ?? "•", text: a.summary, extra: (a.metadata as { text?: string; message?: string } | null)?.text ?? (a.metadata as { message?: string } | null)?.message })),
     ...lead.notes.map((n) => ({ at: n.createdAt, icon: "🗒", text: `Note by ${n.author?.name ?? "someone"}`, extra: n.body })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
   const utm = (lead.utm ?? {}) as Record<string, string>;
+  const custom = Object.entries((lead.customFields ?? {}) as Record<string, unknown>).filter(([, v]) => v !== null && v !== "" && v !== undefined);
+  const sourceLink = recordUrl(lead.application, lead.externalId, lead.externalUrl);
+  const health = lead.application.dataClass === "HEALTH";
 
   return (
     <div>
-      <PageHeader title={lead.name} sub={<>{lead.businessName && <>{lead.businessName} · </>}<a href={`mailto:${lead.email}`} className="hover:underline">{lead.email}</a>{lead.phone && <> · <a href={`tel:${lead.phone}`}>{lead.phone}</a></>}</>}
+      <PageHeader title={lead.name} sub={<><AppBadge app={lead.application} className="mr-2 align-middle" />{lead.businessName && <>{lead.businessName} · </>}{lead.email && <a href={`mailto:${lead.email}`} className="hover:underline">{lead.email}</a>}{lead.phone && <> · <a href={`tel:${lead.phone}`}>{lead.phone}</a></>}</>}
         actions={<>
           <form action={setStage} className="flex gap-2"><input type="hidden" name="id" value={lead.id} />
             <select name="stageId" defaultValue={lead.stageId} className="input w-44">{stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
             <SubmitButton className="btn-ghost">Move</SubmitButton></form>
+          {sourceLink && <a href={sourceLink} target="_blank" rel="noopener noreferrer" className="btn-ghost">Open in {lead.application.name} ↗</a>}
           <Link href="/admin/leads" className="btn-ghost">Back</Link>
         </>} />
       <Flash ok={sp.ok} error={sp.error} />
+      {health && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><b>Health data.</b> This enquiry came from {lead.application.name}. Use it only to respond to the enquiry; it is excluded from campaigns and contact lists.</p>}
       {suppressed && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">This address is on the suppression list ({suppressed.reason.toLowerCase().replace("_", " ")}). Campaign emails will not be sent.</p>}
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
-          <Card title="Email" actions={<span className="text-xs text-ink-500">From your outreach mailbox</span>}>
+          <Card title="Email" actions={<span className="text-xs text-ink-500">From {lead.application.fromAddress ?? "your outreach mailbox"}</span>}>
             <EmailComposer leadId={lead.id} action={sendLeadEmail} defaultSubject={lead.service ? `Your enquiry about ${lead.service.toLowerCase()}` : "Following up"} templates={templates} />
           </Card>
           <Card title="Activity">
@@ -81,7 +89,11 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
         <div className="space-y-6">
           <Card title="Summary">
             <dl className="grid grid-cols-2 gap-y-2 text-sm">
+              <dt className="text-ink-500">Application</dt><dd><AppBadge app={lead.application} /></dd>
+              <dt className="text-ink-500">Data type</dt><dd>{DATA_CLASS_LABEL[lead.application.dataClass]}</dd>
               <dt className="text-ink-500">Stage</dt><dd><Badge tone="blue">{lead.stage.name}</Badge></dd>
+              <dt className="text-ink-500">Priority</dt><dd className="capitalize">{lead.priority}</dd>
+              {lead.externalId && <><dt className="text-ink-500">Source record</dt><dd className="truncate">{sourceLink ? <a href={sourceLink} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">#{lead.externalId}</a> : `#${lead.externalId}`}</dd></>}
               <dt className="text-ink-500">Value</dt><dd>{money(lead.value, lead.currency)}</dd>
               <dt className="text-ink-500">Source</dt><dd>{lead.source.replace(/_/g, " ").toLowerCase()}</dd>
               <dt className="text-ink-500">Country</dt><dd>{countryName(lead.country)}</dd>
@@ -92,6 +104,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
               {lead.contact && <><dt className="text-ink-500">Contact</dt><dd><Link href={`/admin/contacts/${lead.contact.id}`} className="text-brand-600 hover:underline">View contact</Link></dd></>}
             </dl>
             {Object.keys(utm).length > 0 && <div className="mt-4 border-t pt-3"><p className="label">Attribution</p><dl className="grid grid-cols-2 gap-y-1 text-xs">{Object.entries(utm).map(([k, v]) => <><dt key={k} className="text-ink-500">{k}</dt><dd className="truncate" title={v}>{v}</dd></>)}</dl></div>}
+            {custom.length > 0 && <div className="mt-4 border-t pt-3"><p className="label">Details from {lead.application.name}</p><dl className="grid grid-cols-2 gap-y-1 text-xs">{custom.map(([k, v]) => <Fragment key={k}><dt className="text-ink-500">{k.replace(/[_-]+/g, " ")}</dt><dd className="break-words">{typeof v === "object" ? JSON.stringify(v) : String(v)}</dd></Fragment>)}</dl></div>}
             {lead.message && <div className="mt-4 border-t pt-3"><p className="label">Original message</p><p className="whitespace-pre-wrap text-sm">{lead.message}</p></div>}
           </Card>
           <Card title="Tasks">

@@ -1,7 +1,7 @@
 import { COUNTRIES } from "@/lib/countries";
 import { SERVICES } from "@/content/site";
 
-type L = { name?: string; businessName?: string | null; email?: string; phone?: string | null; country?: string | null; service?: string | null; budget?: string | null; value?: string | null; currency?: string; ownerId?: string | null; tags?: string[] };
+type L = { name?: string; businessName?: string | null; email?: string; phone?: string | null; country?: string | null; service?: string | null; budget?: string | null; value?: string | null; currency?: string; ownerId?: string | null; tags?: string[]; priority?: string };
 
 export function LeadFields({ lead = {}, users }: { lead?: L; users: { id: string; name: string }[] }) {
   return (
@@ -18,6 +18,7 @@ export function LeadFields({ lead = {}, users }: { lead?: L; users: { id: string
         <label><span className="label">Currency</span><select name="currency" defaultValue={lead.currency ?? "GBP"} className="input"><option>GBP</option><option>EUR</option></select></label>
       </div>
       <label><span className="label">Owner</span><select name="ownerId" defaultValue={lead.ownerId ?? ""} className="input"><option value="">Unassigned</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+      <label><span className="label">Priority</span><select name="priority" defaultValue={lead.priority ?? "normal"} className="input"><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
       <label><span className="label">Tags (comma separated)</span><input name="tags" defaultValue={(lead.tags ?? []).join(", ")} className="input" /></label>
     </div>
   );

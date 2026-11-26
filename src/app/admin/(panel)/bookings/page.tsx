@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { asc, desc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
+import { appScope, canSeeApplication, inScopeOrShared } from "@/lib/apps";
 import { db, t } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { getSetting, setSetting } from "@/lib/settings";
@@ -28,6 +29,8 @@ async function setBookingStatus(fd: FormData) {
   const user = await requireUser();
   const id = str(fd.get("id"));
   const status = str(fd.get("status")) as "CONFIRMED" | "CANCELLED" | "COMPLETED";
+  const existing = await db.query.bookings.findFirst({ where: eq(t.bookings.id, id) });
+  if (!existing || (existing.applicationId && !(await canSeeApplication(user, existing.applicationId)))) return;
   const [b] = await db.update(t.bookings).set({ status }).where(eq(t.bookings.id, id)).returning();
   if (b?.leadId) await addActivity(b.leadId, "meeting", `Call marked ${status.toLowerCase()} by ${user.name}`);
   revalidatePath("/admin/bookings");
@@ -36,10 +39,11 @@ async function setBookingStatus(fd: FormData) {
 export default async function Bookings() {
   const user = await requireUser();
   const s = await getSetting("booking");
+  const scope = await appScope(user);
   const now = new Date();
   const [upcoming, past] = await Promise.all([
-    db.select().from(t.bookings).where(gte(t.bookings.startsAt, now)).orderBy(asc(t.bookings.startsAt)),
-    db.select().from(t.bookings).where(lt(t.bookings.startsAt, now)).orderBy(desc(t.bookings.startsAt)).limit(30),
+    db.select().from(t.bookings).where(and(gte(t.bookings.startsAt, now), inScopeOrShared(t.bookings.applicationId, scope, user))).orderBy(asc(t.bookings.startsAt)),
+    db.select().from(t.bookings).where(and(lt(t.bookings.startsAt, now), inScopeOrShared(t.bookings.applicationId, scope, user))).orderBy(desc(t.bookings.startsAt)).limit(30),
   ]);
   const Row = ({ b }: { b: typeof upcoming[number] }) => (
     <tr><td className="whitespace-nowrap">{fmtDate(b.startsAt, true)}</td><td>{b.leadId ? <Link href={`/admin/leads/${b.leadId}`} className="font-semibold hover:underline">{b.name}</Link> : b.name}<div className="text-xs text-ink-500">{b.email} {b.phone}</div></td><td className="text-sm">{b.topic}</td><td><Badge>{b.status}</Badge></td>

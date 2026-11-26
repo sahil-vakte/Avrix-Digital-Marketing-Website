@@ -26,7 +26,9 @@ export const suppressionReasonEnum = pgEnum("suppression_reason", [
 ]);
 export const leadSourceEnum = pgEnum("lead_source", [
   "WEBSITE_FORM", "BOOKING", "CAMPAIGN_REPLY", "MANUAL", "WHATSAPP", "PHONE", "OTHER",
+  "WEBHOOK", "FACEBOOK_LEAD_AD", "CHATBOT", "NEWSLETTER", "JOB_APPLICATION", "SYNC",
 ]);
+export const dataClassEnum = pgEnum("data_class", ["BUSINESS", "HEALTH", "RECRUITMENT"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["CONFIRMED", "CANCELLED", "COMPLETED"]);
 export const campaignStatusEnum = pgEnum("campaign_status", [
   "DRAFT", "PENDING_APPROVAL", "SCHEDULED", "SENDING", "PAUSED", "COMPLETED", "CANCELLED",
@@ -40,6 +42,84 @@ export const eventTypeEnum = pgEnum("event_type", ["SENT", "OPEN", "CLICK", "REP
 export const publishStatusEnum = pgEnum("publish_status", ["DRAFT", "PUBLISHED"]);
 
 // ───────────── Users & security ─────────────
+// ───────────── Applications (every source app feeding this CRM) ─────────────
+/** One row per website / product whose leads land in this CRM. Everything in the CRM is tagged with one. */
+export const applications = pgTable("applications", {
+  id: id(),
+  key: text("key").notNull().unique(), // slug used by connectors, e.g. "seuk"
+  name: text("name").notNull(),
+  domain: text("domain"),
+  color: text("color").notNull().default("#3563f2"),
+  dataClass: dataClassEnum("data_class").notNull().default("BUSINESS"),
+  active: boolean("active").notNull().default(true),
+  campaignsAllowed: boolean("campaigns_allowed").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // Notifications + sending identity
+  alertEmail: text("alert_email"),
+  fromName: text("from_name"),
+  fromAddress: text("from_address"),
+  replyTo: text("reply_to"),
+  legalName: text("legal_name"),
+  postalAddress: text("postal_address"),
+  smtpHost: text("smtp_host"),
+  smtpPort: integer("smtp_port"),
+  smtpSecure: boolean("smtp_secure").notNull().default(true),
+  smtpUser: text("smtp_user"),
+  smtpPassEnc: text("smtp_pass_enc"), // AES-GCM encrypted
+  // Links back to the source app
+  recordUrlTemplate: text("record_url_template"), // e.g. https://avrixdigital.co.uk/manage-7f3k/enquiries/enquiry/{id}/change/
+  webhookUrl: text("webhook_url"), // receives signed stage-change events
+  webhookSecretEnc: text("webhook_secret_enc"),
+  retentionMonths: integer("retention_months"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** API keys used by source apps to post leads. Only a hash of the key is stored; the signing secret is encrypted. */
+export const applicationKeys = pgTable("application_keys", {
+  id: id(),
+  applicationId: text("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  prefix: text("prefix").notNull(),
+  keyHash: text("key_hash").notNull().unique(),
+  secretEnc: text("secret_enc").notNull(),
+  lastUsedAt: ts("last_used_at"),
+  revokedAt: ts("revoked_at"),
+  createdAt: createdAt(),
+});
+
+/** Which staff can see which application. Administrators see everything. */
+export const userApplications = pgTable("user_applications", {
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  applicationId: text("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  createdAt: createdAt(),
+}, (t) => [primaryKey({ columns: [t.userId, t.applicationId] })]);
+
+/** Every intake call, for idempotency and troubleshooting (no personal data stored here). */
+export const intakeEvents = pgTable("intake_events", {
+  id: id(),
+  applicationId: text("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  leadId: text("lead_id"),
+  outcome: text("outcome").notNull(), // created | updated | merged | rejected
+  error: text("error"),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex("intake_events_app_key_uq").on(t.applicationId, t.idempotencyKey), index("intake_events_created_idx").on(t.createdAt)]);
+
+/** Outbound, signed stage-change notifications to source apps (retried by the worker). */
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  id: id(),
+  applicationId: text("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  event: text("event").notNull(),
+  body: jsonb("body").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: ts("next_attempt_at").notNull().defaultNow(),
+  deliveredAt: ts("delivered_at"),
+  lastError: text("last_error"),
+  createdAt: createdAt(),
+}, (t) => [index("webhook_due_idx").on(t.deliveredAt, t.nextAttemptAt)]);
+
 export const users = pgTable("users", {
   id: id(),
   email: text("email").notNull().unique(),
@@ -78,6 +158,7 @@ export const settings = pgTable("settings", {
 // ───────────── Contacts ─────────────
 export const importJobs = pgTable("import_jobs", {
   id: id(),
+  applicationId: text("application_id").references(() => applications.id, { onDelete: "restrict" }),
   fileName: text("file_name").notNull(),
   fileType: text("file_type").notNull(),
   headers: textArr("headers"),
@@ -99,6 +180,7 @@ export const importJobs = pgTable("import_jobs", {
 
 export const contacts = pgTable("contacts", {
   id: id(),
+  applicationId: text("application_id").references(() => applications.id, { onDelete: "restrict" }),
   email: text("email").notNull().unique(),
   businessName: text("business_name").notNull(),
   firstName: text("first_name"),
@@ -131,6 +213,7 @@ export const contacts = pgTable("contacts", {
 
 export const lists = pgTable("lists", {
   id: id(),
+  applicationId: text("application_id").references(() => applications.id, { onDelete: "restrict" }),
   name: text("name").notNull(),
   description: text("description"),
   type: listTypeEnum("type").notNull().default("STATIC"),
@@ -180,15 +263,22 @@ export const countryRules = pgTable("country_rules", {
 // ───────────── CRM ─────────────
 export const pipelineStages = pgTable("pipeline_stages", {
   id: id(),
-  name: text("name").notNull().unique(),
+  applicationId: text("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
   order: integer("order").notNull(),
   color: text("color").notNull().default("#3563f2"),
   isWon: boolean("is_won").notNull().default(false),
   isLost: boolean("is_lost").notNull().default(false),
-});
+}, (t) => [uniqueIndex("pipeline_stages_app_name_uq").on(t.applicationId, t.name)]);
 
 export const leads = pgTable("leads", {
   id: id(),
+  applicationId: text("application_id").notNull().references(() => applications.id, { onDelete: "restrict" }),
+  externalId: text("external_id"), // record id in the source application
+  externalUrl: text("external_url"),
+  customFields: jsonb("custom_fields").$type<Record<string, unknown>>().notNull().default({}),
+  priority: text("priority").notNull().default("normal"), // low | normal | high
+  nextActionAt: ts("next_action_at"),
   contactId: text("contact_id").references(() => contacts.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   businessName: text("business_name"),
@@ -208,7 +298,11 @@ export const leads = pgTable("leads", {
   position: integer("position").notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("leads_stage_idx").on(t.stageId), index("leads_email_idx").on(t.email), index("leads_created_idx").on(t.createdAt)]);
+}, (t) => [
+  index("leads_stage_idx").on(t.stageId), index("leads_email_idx").on(t.email), index("leads_created_idx").on(t.createdAt),
+  index("leads_app_created_idx").on(t.applicationId, t.createdAt),
+  uniqueIndex("leads_app_external_uq").on(t.applicationId, t.externalId).where(sql`external_id is not null`),
+]);
 
 export const notes = pgTable("notes", {
   id: id(),
@@ -239,6 +333,7 @@ export const activities = pgTable("activities", {
 
 export const bookings = pgTable("bookings", {
   id: id(),
+  applicationId: text("application_id").references(() => applications.id, { onDelete: "restrict" }),
   leadId: text("lead_id").references(() => leads.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   email: text("email").notNull(),
@@ -253,6 +348,7 @@ export const bookings = pgTable("bookings", {
 // ───────────── Email campaigns ─────────────
 export const templates = pgTable("templates", {
   id: id(),
+  applicationId: text("application_id").references(() => applications.id, { onDelete: "restrict" }),
   name: text("name").notNull(),
   subject: text("subject").notNull(),
   html: text("html").notNull(),
@@ -262,6 +358,7 @@ export const templates = pgTable("templates", {
 
 export const campaigns = pgTable("campaigns", {
   id: id(),
+  applicationId: text("application_id").references(() => applications.id, { onDelete: "restrict" }),
   name: text("name").notNull(),
   fromName: text("from_name").notNull(),
   replyTo: text("reply_to"),
@@ -325,6 +422,7 @@ export const campaignRecipients = pgTable("campaign_recipients", {
 
 export const emailMessages = pgTable("email_messages", {
   id: id(),
+  applicationId: text("application_id").references(() => applications.id, { onDelete: "restrict" }),
   kind: messageKindEnum("kind").notNull(),
   campaignId: text("campaign_id").references(() => campaigns.id, { onDelete: "cascade" }),
   recipientId: text("recipient_id").references(() => campaignRecipients.id, { onDelete: "cascade" }),
@@ -427,11 +525,23 @@ export const pricingPlans = pgTable("pricing_plans", {
 });
 
 // ───────────── Relations (for db.query.*) ─────────────
+export const applicationsRelations = relations(applications, ({ many }) => ({
+  leads: many(leads), stages: many(pipelineStages), keys: many(applicationKeys), members: many(userApplications),
+}));
+export const applicationKeysRelations = relations(applicationKeys, ({ one }) => ({
+  application: one(applications, { fields: [applicationKeys.applicationId], references: [applications.id] }),
+}));
+export const userApplicationsRelations = relations(userApplications, ({ one }) => ({
+  user: one(users, { fields: [userApplications.userId], references: [users.id] }),
+  application: one(applications, { fields: [userApplications.applicationId], references: [applications.id] }),
+}));
 export const usersRelations = relations(users, ({ many }) => ({
   leadsOwned: many(leads),
   tasks: many(tasks),
+  applications: many(userApplications),
 }));
-export const contactsRelations = relations(contacts, ({ many }) => ({
+export const contactsRelations = relations(contacts, ({ many, one }) => ({
+  application: one(applications, { fields: [contacts.applicationId], references: [applications.id] }),
   lists: many(listMembers),
   leads: many(leads),
   recipients: many(campaignRecipients),
@@ -442,6 +552,7 @@ export const listMembersRelations = relations(listMembers, ({ one }) => ({
   contact: one(contacts, { fields: [listMembers.contactId], references: [contacts.id] }),
 }));
 export const leadsRelations = relations(leads, ({ one, many }) => ({
+  application: one(applications, { fields: [leads.applicationId], references: [applications.id] }),
   contact: one(contacts, { fields: [leads.contactId], references: [contacts.id] }),
   stage: one(pipelineStages, { fields: [leads.stageId], references: [pipelineStages.id] }),
   owner: one(users, { fields: [leads.ownerId], references: [users.id] }),
@@ -451,7 +562,10 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   bookings: many(bookings),
   messages: many(emailMessages),
 }));
-export const stagesRelations = relations(pipelineStages, ({ many }) => ({ leads: many(leads) }));
+export const stagesRelations = relations(pipelineStages, ({ many, one }) => ({
+  leads: many(leads),
+  application: one(applications, { fields: [pipelineStages.applicationId], references: [applications.id] }),
+}));
 export const notesRelations = relations(notes, ({ one }) => ({
   lead: one(leads, { fields: [notes.leadId], references: [leads.id] }),
   author: one(users, { fields: [notes.authorId], references: [users.id] }),
@@ -464,9 +578,11 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
   lead: one(leads, { fields: [activities.leadId], references: [leads.id] }),
 }));
 export const bookingsRelations = relations(bookings, ({ one }) => ({
+  application: one(applications, { fields: [bookings.applicationId], references: [applications.id] }),
   lead: one(leads, { fields: [bookings.leadId], references: [leads.id] }),
 }));
 export const campaignsRelations = relations(campaigns, ({ many, one }) => ({
+  application: one(applications, { fields: [campaigns.applicationId], references: [applications.id] }),
   steps: many(sequenceSteps),
   recipients: many(campaignRecipients),
   links: many(links),
@@ -505,3 +621,5 @@ export type User = typeof users.$inferSelect;
 export type CountryRule = typeof countryRules.$inferSelect;
 export type EmailMessage = typeof emailMessages.$inferSelect;
 export type CampaignRecipient = typeof campaignRecipients.$inferSelect;
+export type Application = typeof applications.$inferSelect;
+export type PipelineStage = typeof pipelineStages.$inferSelect;

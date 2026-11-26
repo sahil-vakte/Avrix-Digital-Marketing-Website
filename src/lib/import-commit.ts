@@ -68,6 +68,7 @@ export async function commitImport(jobId: string, rows: string[][], headers: str
   for (let i = 0; i < emails.length; i += 1000)
     for (const c of await db.select().from(t.contacts).where(inArray(t.contacts.email, emails.slice(i, i + 1000)))) existing.set(c.email, c);
 
+  const job = await db.query.importJobs.findFirst({ where: eq(t.importJobs.id, jobId), columns: { applicationId: true } });
   let imported = 0, updated = 0, skipped = 0, invalid = 0;
   const memberIds: string[] = [];
   const toInsert: (typeof t.contacts.$inferInsert)[] = [];
@@ -91,7 +92,7 @@ export async function commitImport(jobId: string, rows: string[][], headers: str
       }).where(eq(t.contacts.id, ex.id));
       updated++; memberIds.push(ex.id);
     } else {
-      toInsert.push({ ...(rec as typeof t.contacts.$inferInsert), emailStatus, emailFlags: flags, importJobId: jobId,
+      toInsert.push({ ...(rec as typeof t.contacts.$inferInsert), emailStatus, emailFlags: flags, importJobId: jobId, applicationId: job?.applicationId ?? null,
         lawfulBasis: rec.consentStatus === "OPTED_IN" ? "Consent (imported)" : rec.consentStatus === "LEGITIMATE_INTEREST" ? "Legitimate interests (B2B)" : null,
         consentAt: rec.consentStatus === "OPTED_IN" ? new Date() : null });
     }
