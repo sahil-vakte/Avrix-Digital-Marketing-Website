@@ -26,7 +26,16 @@ npm run build && pm2 restart all
 ```
 
 Then for each application: **Admin → Applications → Manage → Generate key**, copy the three values shown
-once into that application's environment file, and deploy it:
+once into that application's environment file, and deploy it. On the server you can do the same from the
+shell instead; it prints `KEY=value` lines only, so a setup script can write them straight into an env file:
+
+```bash
+node node_modules/tsx/dist/cli.mjs scripts/create-app-key.ts --app medicolex
+node node_modules/tsx/dist/cli.mjs scripts/create-app-key.ts --app avrix-digital \
+  --webhook-url https://avrixdigital.co.uk/api/crm-webhook/   # also sets the webhook and prints its secret
+```
+
+The values each application needs:
 
 ```
 AVRIX_CRM_URL=https://<this CRM's domain>
