@@ -22,7 +22,7 @@ export function verifySignature(secret: string, timestamp: string | null, header
   if (!Number.isFinite(ts) || Math.abs(now / 1000 - ts) > MAX_SKEW_SECONDS) return { ok: false, reason: "Timestamp outside the 5-minute window" };
   const given = header.replace(/^sha256=/, "");
   const expected = sign(secret, timestamp, rawBody);
-  if (given.length !== expected.length) return { ok: false, reason: "Bad signature" };
+  if (!/^[0-9a-f]{64}$/i.test(given)) return { ok: false, reason: "Bad signature" };
   return timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(expected, "hex")) ? { ok: true } : { ok: false, reason: "Bad signature" };
 }
 

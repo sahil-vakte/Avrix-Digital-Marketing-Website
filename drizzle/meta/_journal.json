@@ -15,6 +15,13 @@
       "when": 1795670880994,
       "tag": "0001_applications",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795680412831,
+      "tag": "0002_avrix_com_domain",
+      "breakpoints": true
     }
   ]
 }

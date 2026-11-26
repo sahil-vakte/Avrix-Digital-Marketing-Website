@@ -20,8 +20,8 @@ async function main() {
   // Applications — every website / product whose leads land in this CRM.
   const apps = [
     { id: "app-avrix-europe", key: "avrix-europe", name: "Avrix UK & Europe", domain: "avrix-europe.com", color: "#3563f2", dataClass: "BUSINESS" as const, sortOrder: 1, preset: "europe" },
-    { key: "avrix-digital", name: "AVRIX Digital", domain: "avrixdigital.co.uk", color: "#db2777", dataClass: "BUSINESS" as const, sortOrder: 2, preset: "agency",
-      recordUrlTemplate: "https://avrixdigital.co.uk/manage-7f3k/enquiries/enquiry/{id}/change/" },
+    { key: "avrix-digital", name: "AVRIX Digital", domain: "avrixdigital.com", color: "#db2777", dataClass: "BUSINESS" as const, sortOrder: 2, preset: "agency",
+      recordUrlTemplate: "https://avrixdigital.com/manage-7f3k/enquiries/enquiry/{id}/change/" },
     { key: "medicolex", name: "Medicolex", domain: "medicolex.co.uk", color: "#0891b2", dataClass: "HEALTH" as const, sortOrder: 3, preset: "medicolegal", campaignsAllowed: false },
     { key: "seuk", name: "Shoulder Elbow Consultant", domain: "shoulderelbowconsultant.co.uk", color: "#15803d", dataClass: "HEALTH" as const, sortOrder: 4, preset: "clinic", campaignsAllowed: false },
     { key: "growth-suite", name: "Growth Suite", domain: null, color: "#7c3aed", dataClass: "BUSINESS" as const, sortOrder: 5, preset: "sales" },

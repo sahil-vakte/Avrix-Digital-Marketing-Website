@@ -24,6 +24,13 @@ describe("intake signing", () => {
     expect(verifySignature(secret, ts, `sha256=${sign(secret, ts, body)}`, body)).toEqual({ ok: false, reason: "Timestamp outside the 5-minute window" });
   });
 
+  it("rejects malformed hexadecimal signatures without throwing", () => {
+    const ts = Math.floor(Date.now() / 1000).toString();
+    for (const value of ["z".repeat(64), "a".repeat(63) + "!", "a".repeat(62)]) {
+      expect(verifySignature(secret, ts, `sha256=${value}`, body)).toEqual({ ok: false, reason: "Bad signature" });
+    }
+  });
+
   it("stores only a hash of API keys", () => {
     const c = newApiCredentials();
     expect(c.key.startsWith("avx_")).toBe(true);
