@@ -9,8 +9,9 @@ export async function GET() {
     await db.execute(sql`select 1`);
     const hb = await getRaw<{ at: string }>("worker.heartbeat");
     const workerAgeSec = hb ? Math.round((Date.now() - new Date(hb.at).getTime()) / 1000) : null;
-    const ok = workerAgeSec !== null && workerAgeSec < 120;
-    return Response.json({ ok, db: "up", worker: ok ? "up" : "stale", workerAgeSec }, { status: ok ? 200 : 503 });
+    const workerPaused = process.env.CRM_WORKER_PAUSED === "true";
+    const ok = workerPaused || (workerAgeSec !== null && workerAgeSec < 120);
+    return Response.json({ ok, db: "up", worker: workerPaused ? "paused" : ok ? "up" : "stale", workerAgeSec }, { status: ok ? 200 : 503 });
   } catch (e) {
     return Response.json({ ok: false, db: "down", error: (e as Error).message }, { status: 503 });
   }
