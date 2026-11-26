@@ -4,6 +4,11 @@
 set -euo pipefail
 umask 027
 ROOT=/opt/avrix-marketing
+# Preserve an intentionally stopped worker across deployments and rollbacks.
+services=(avrix-marketing-web)
+if systemctl is-active --quiet avrix-marketing-worker; then
+  services+=(avrix-marketing-worker)
+fi
 exec 9>/run/lock/avrix-marketing-deploy.lock
 flock -n 9 || { echo 'Another deployment is running'; exit 1; }
 release="$ROOT/releases/$(date -u +%Y%m%dT%H%M%S)-$RANDOM"
@@ -51,7 +56,7 @@ rollback() {
   if [[ -n "$previous" && -d "$previous" ]]; then
     ln -sfn "$previous" "$ROOT/current.next"
     mv -Tf "$ROOT/current.next" "$ROOT/current"
-    systemctl restart avrix-marketing-web avrix-marketing-worker
+    systemctl restart "${services[@]}"
   else
     systemctl stop avrix-marketing-web avrix-marketing-worker
   fi
@@ -59,7 +64,7 @@ rollback() {
 }
 ln -sfn "$release" "$ROOT/current.next"
 mv -Tf "$ROOT/current.next" "$ROOT/current"
-if ! systemctl restart avrix-marketing-web avrix-marketing-worker; then rollback; exit 1; fi
+if ! systemctl restart "${services[@]}"; then rollback; exit 1; fi
 healthy=false
 for attempt in $(seq 1 30); do
   if curl --max-time 5 -fsS http://127.0.0.1:3010/api/health; then healthy=true; break; fi

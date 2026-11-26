@@ -31,7 +31,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       DATABASE_URL: postgresql://avrix:ci-only-password@localhost:5432/avrix_ci
-      APP_URL: ${{ vars.APP_URL || 'http://92.205.160.39' }}
+      APP_URL: ${{ vars.APP_URL || 'https://crm.avrixdigital.com' }}
       NEXT_TELEMETRY_DISABLED: '1'
       IMAP_ENABLED: 'false'
     steps:

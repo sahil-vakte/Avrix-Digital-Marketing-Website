@@ -5,6 +5,10 @@ const nextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },
   },
+  // Keep the marketing page source available, but open the CRM at the root URL.
+  async redirects() {
+    return [{ source: "/", destination: "/admin", permanent: false }];
+  },
   async headers() {
     return [
       {
