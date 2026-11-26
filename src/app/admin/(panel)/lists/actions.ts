@@ -5,6 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, t } from "@/db";
 import type { SegmentRules } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { appScope, defaultApplication } from "@/lib/apps";
 import { audit } from "@/lib/audit";
 import { str } from "@/lib/utils";
 
@@ -20,7 +21,8 @@ function rules(fd: FormData): SegmentRules {
 export async function createList(fd: FormData) {
   const user = await requireUser();
   const type = fd.get("type") === "SEGMENT" ? "SEGMENT" : "STATIC";
-  const [l] = await db.insert(t.lists).values({ name: str(fd.get("name")) || "Untitled list", description: str(fd.get("description")) || null, type, segmentRules: type === "SEGMENT" ? rules(fd) : null }).returning();
+  const app = await defaultApplication(await appScope(user));
+  const [l] = await db.insert(t.lists).values({ applicationId: app.id, name: str(fd.get("name")) || "Untitled list", description: str(fd.get("description")) || null, type, segmentRules: type === "SEGMENT" ? rules(fd) : null }).returning();
   await audit(user.id, "create", "list", l.id);
   redirect(`/admin/lists/${l.id}`);
 }

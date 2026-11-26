@@ -23,7 +23,11 @@ export function segmentWhere(r: SegmentRules): SQL | undefined {
   return c.length ? and(...c) : undefined;
 }
 
-export async function contactsForLists(listIds: string[]): Promise<Contact[]> {
+/** Contacts belonging to an application (rows created before applications existed have none and stay eligible). */
+const appContacts = (applicationId: string | null | undefined) =>
+  applicationId ? or(eq(t.contacts.applicationId, applicationId), isNull(t.contacts.applicationId)) : undefined;
+
+export async function contactsForLists(listIds: string[], applicationId?: string | null): Promise<Contact[]> {
   if (!listIds.length) return [];
   const ls = await db.select().from(t.lists).where(inArray(t.lists.id, listIds));
   const byId = new Map<string, Contact>();
@@ -31,11 +35,11 @@ export async function contactsForLists(listIds: string[]): Promise<Contact[]> {
   if (staticIds.length) {
     const rows = await db.select({ c: t.contacts }).from(t.listMembers)
       .innerJoin(t.contacts, eq(t.contacts.id, t.listMembers.contactId))
-      .where(inArray(t.listMembers.listId, staticIds));
+      .where(and(inArray(t.listMembers.listId, staticIds), appContacts(applicationId)));
     for (const r of rows) byId.set(r.c.id, r.c);
   }
   for (const l of ls.filter((x) => x.type === "SEGMENT")) {
-    const where = segmentWhere(l.segmentRules ?? {});
+    const where = and(segmentWhere(l.segmentRules ?? {}), appContacts(applicationId ?? l.applicationId));
     const rows = await db.select().from(t.contacts).where(where);
     for (const c of rows) byId.set(c.id, c);
   }
@@ -55,8 +59,8 @@ export async function eligibilityContext(): Promise<EligibilityContext> {
   };
 }
 
-export async function previewAudience(listIds: string[]) {
-  const [contacts, ctx] = await Promise.all([contactsForLists(listIds), eligibilityContext()]);
+export async function previewAudience(listIds: string[], applicationId?: string | null) {
+  const [contacts, ctx] = await Promise.all([contactsForLists(listIds, applicationId), eligibilityContext()]);
   const reasons = new Map<string, number>();
   let eligible = 0;
   for (const c of contacts) {
@@ -71,7 +75,11 @@ export async function previewAudience(listIds: string[]) {
 export async function materializeCampaign(campaignId: string) {
   const campaign = await db.query.campaigns.findFirst({ where: eq(t.campaigns.id, campaignId) });
   if (!campaign) throw new Error("Campaign not found");
-  const [contacts, ctx] = await Promise.all([contactsForLists(campaign.listIds), eligibilityContext()]);
+  if (campaign.applicationId) {
+    const app = await db.query.applications.findFirst({ where: eq(t.applications.id, campaign.applicationId) });
+    if (app && (!app.campaignsAllowed || app.dataClass === "HEALTH")) throw new Error(`Campaigns are switched off for ${app.name}`);
+  }
+  const [contacts, ctx] = await Promise.all([contactsForLists(campaign.listIds, campaign.applicationId), eligibilityContext()]);
 
   const eligible: Contact[] = [];
   const excluded: { c: Contact; reason: string }[] = [];
@@ -104,7 +112,7 @@ export async function materializeCampaign(campaignId: string) {
       });
       const inserted = await tx.insert(t.campaignRecipients).values(recRows).onConflictDoNothing().returning();
       const msgs = inserted.filter((r) => r.variant).map((r) => ({
-        kind: "CAMPAIGN" as const, campaignId, recipientId: r.id, stepOrder: 0, toEmail: r.email,
+        kind: "CAMPAIGN" as const, campaignId, applicationId: campaign.applicationId, recipientId: r.id, stepOrder: 0, toEmail: r.email,
         subject: r.variant === "B" ? campaign.subjectB! : campaign.subjectA, token: randomToken(), scheduledFor: startAt,
       }));
       if (msgs.length) await tx.insert(t.emailMessages).values(msgs);

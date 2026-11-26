@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { sql } from "drizzle-orm";
 import { db, pool, t } from "../src/db";
 import { COUNTRIES } from "../src/lib/countries";
+import { STAGE_PRESETS } from "../src/lib/stage-presets";
 
 async function main() {
   // Admin user
@@ -16,17 +17,31 @@ async function main() {
     console.log(`✓ Admin user created: ${email}`);
   } else console.log(`• Admin user exists: ${email}`);
 
-  // Pipeline stages
-  const stages = [
-    { name: "New", order: 1, color: "#3563f2" },
-    { name: "Contacted", order: 2, color: "#0ea5e9" },
-    { name: "Replied", order: 3, color: "#8b5cf6" },
-    { name: "Meeting booked", order: 4, color: "#f59e0b" },
-    { name: "Proposal sent", order: 5, color: "#f97316" },
-    { name: "Won", order: 6, color: "#16a34a", isWon: true },
-    { name: "Lost", order: 7, color: "#9ca3af", isLost: true },
+  // Applications — every website / product whose leads land in this CRM.
+  const apps = [
+    { id: "app-avrix-europe", key: "avrix-europe", name: "Avrix UK & Europe", domain: "avrix-europe.com", color: "#3563f2", dataClass: "BUSINESS" as const, sortOrder: 1, preset: "europe" },
+    { key: "avrix-digital", name: "AVRIX Digital", domain: "avrixdigital.com", color: "#db2777", dataClass: "BUSINESS" as const, sortOrder: 2, preset: "agency",
+      recordUrlTemplate: "https://avrixdigital.com/manage-7f3k/enquiries/enquiry/{id}/change/" },
+    { key: "medicolex", name: "Medicolex", domain: "medicolex.co.uk", color: "#0891b2", dataClass: "HEALTH" as const, sortOrder: 3, preset: "medicolegal", campaignsAllowed: false },
+    { key: "seuk", name: "Shoulder Elbow Consultant", domain: "shoulderelbowconsultant.co.uk", color: "#15803d", dataClass: "HEALTH" as const, sortOrder: 4, preset: "clinic", campaignsAllowed: false },
+    { key: "growth-suite", name: "Growth Suite", domain: null, color: "#7c3aed", dataClass: "BUSINESS" as const, sortOrder: 5, preset: "sales" },
+    { key: "atlis-crm", name: "atlis.cloud CRM", domain: "atlis.cloud", color: "#b45309", dataClass: "BUSINESS" as const, sortOrder: 6, preset: "sales" },
   ];
-  await db.insert(t.pipelineStages).values(stages).onConflictDoNothing();
+  const europeStages = [
+    { name: "New", color: "#3563f2" }, { name: "Contacted", color: "#0ea5e9" }, { name: "Replied", color: "#8b5cf6" },
+    { name: "Meeting booked", color: "#f59e0b" }, { name: "Proposal sent", color: "#f97316" },
+    { name: "Won", color: "#16a34a", isWon: true }, { name: "Lost", color: "#9ca3af", isLost: true },
+  ];
+  for (const { preset, ...a } of apps) {
+    await db.insert(t.applications).values(a).onConflictDoNothing({ target: t.applications.key });
+    const app = (await db.query.applications.findFirst({ where: (x, { eq }) => eq(x.key, a.key) }))!;
+    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(t.pipelineStages).where(sql`${t.pipelineStages.applicationId} = ${app.id}`);
+    if (n === 0) {
+      const list = preset === "europe" ? europeStages : STAGE_PRESETS[preset];
+      await db.insert(t.pipelineStages).values(list.map((s, i) => ({ ...s, order: i + 1, applicationId: app.id })));
+      console.log(`✓ Pipeline created for ${app.name}`);
+    }
+  }
 
   // Country rules
   await db.insert(t.countryRules).values(
@@ -86,6 +101,7 @@ async function main() {
   const [{ n: tplCount }] = await db.select({ n: sql<number>`count(*)::int` }).from(t.templates);
   if (tplCount === 0) {
     await db.insert(t.templates).values({
+      applicationId: "app-avrix-europe",
       name: "Intro — plain text style",
       subject: "Quick question about {{business_name}}",
       html: "<p>Hi {{first_name|there}},</p><p>I came across {{business_name}} and wanted to ask a quick question: are you happy with the number of enquiries you get from Google and social media at the moment?</p><p>We help UK and European SMEs turn ad spend into booked calls — with tracking that shows exactly which campaigns bring in revenue.</p><p>Would a 15-minute call next week be useful?</p><p>Best regards,<br>AB<br>Avrix UK &amp; Europe</p>",

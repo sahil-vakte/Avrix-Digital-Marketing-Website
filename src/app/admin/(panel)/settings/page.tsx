@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { asc } from "drizzle-orm";
-import { db, t } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { capacity } from "@/lib/caps";
 import { getRaw, getSetting } from "@/lib/settings";
@@ -8,7 +6,7 @@ import { env } from "@/lib/env";
 import { Badge, Card, Flash, PageHeader } from "@/components/admin/ui";
 import { SubmitButton } from "@/components/admin/buttons";
 import { fmtDate } from "@/lib/utils";
-import { saveCompliance, saveStage, testSmtp, togglePause } from "./actions";
+import { saveCompliance, testSmtp, togglePause } from "./actions";
 import { checkDns } from "@/lib/dns-check";
 
 export const metadata = { title: "Settings" };
@@ -17,16 +15,16 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   await requireUser({ admin: true });
   const sp = await searchParams;
   const domain = env.mail.fromAddress.split("@")[1] ?? "";
-  const [cap, comp, pause, heartbeat, imap, stages, dnsr] = await Promise.all([
+  const [cap, comp, pause, heartbeat, imap, dnsr] = await Promise.all([
     capacity(), getSetting("compliance"), getRaw<{ until: number; reason: string }>("sending.pause"), getRaw<{ at: string }>("worker.heartbeat"),
-    getRaw<{ at: string; processed: number }>("imap.lastPoll"), db.select().from(t.pipelineStages).orderBy(asc(t.pipelineStages.order)),
+    getRaw<{ at: string; processed: number }>("imap.lastPoll"),
     domain ? checkDns(domain) : null,
   ]);
   const paused = pause && pause.until > Date.now();
   const Row = ({ k, v }: { k: string; v: React.ReactNode }) => <><dt className="text-ink-500">{k}</dt><dd className="break-all">{v}</dd></>;
   return (
     <div>
-      <PageHeader title="Settings" actions={<><Link href="/admin/settings/users" className="btn-ghost">Users</Link><Link href="/admin/settings/countries" className="btn-ghost">Country rules</Link></>} />
+      <PageHeader title="Settings" actions={<><Link href="/admin/settings/applications" className="btn-ghost">Applications</Link><Link href="/admin/settings/users" className="btn-ghost">Users</Link><Link href="/admin/settings/countries" className="btn-ghost">Country rules</Link></>} />
       <Flash ok={sp.ok} error={sp.error} />
       <div className="grid gap-6 xl:grid-cols-2">
         <Card title="Sending account" actions={<form action={testSmtp}><SubmitButton className="btn-ghost btn-sm" pendingText="Testing…">Test SMTP login</SubmitButton></form>}>
@@ -73,21 +71,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <p className="mt-3 text-xs text-ink-500">Per-country consent rules: <Link href="/admin/settings/countries" className="text-brand-600 underline">Country rules</Link>. Not legal advice — confirm with your adviser.</p>
         </Card>
 
-        <Card title="Pipeline stages">
-          <div className="space-y-2">
-            {[...stages, null].map((s, i) => (
-              <form key={s?.id ?? "new"} action={saveStage} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={s?.id ?? ""} />
-                <input name="order" type="number" defaultValue={s?.order ?? stages.length + 1} className="input w-16" aria-label="Order" />
-                <input name="name" defaultValue={s?.name ?? ""} placeholder="New stage" required className="input w-40" />
-                <input name="color" type="color" defaultValue={s?.color ?? "#3563f2"} className="h-9 w-10 rounded border" aria-label="Colour" />
-                <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="isWon" defaultChecked={s?.isWon} />Won</label>
-                <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="isLost" defaultChecked={s?.isLost} />Lost</label>
-                <SubmitButton className="btn-ghost btn-sm">{s ? "Save" : "Add"}</SubmitButton>
-                {s && stages.length > 2 && i > 0 && <SubmitButton className="btn-ghost btn-sm text-red-600" name="delete" value="1">Delete</SubmitButton>}
-              </form>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-ink-500">Automations look for stages named “Contacted”, “Replied” and “Meeting booked”.</p>
+        <Card title="Applications and pipelines">
+          <p className="text-sm text-ink-700">Each application (Avrix UK &amp; Europe, AVRIX Digital, Medicolex, Shoulder Elbow Consultant, Growth Suite, atlis.cloud…) has its own pipeline, API keys, sending identity and staff access.</p>
+          <Link href="/admin/settings/applications" className="btn-primary mt-3 inline-flex">Manage applications</Link>
         </Card>
       </div>
     </div>

@@ -9,6 +9,8 @@ One Next.js application for **Avrix UK & Europe Business Marketing** (part of Av
 | **Campaign engine** | Personalised emails sent one by one through **your own SMTP account from `.env`** (Google Workspace by default), with A/B subjects, up to 3 threaded follow-ups, send windows, daily/hourly caps, warm-up, open/click/reply/bounce/unsubscribe tracking |
 | **Worker** (`npm run worker`) | Always-on process that sends the queue, picks A/B winners, completes campaigns and reads the mailbox over IMAP for bounces and replies |
 
+| **Unified CRM** | Leads from every Avrix application (AVRIX Digital, Medicolex, Shoulder Elbow Consultant, Growth Suite, atlis.cloud…) arrive through a signed intake API. An **Application** switcher, per-application pipelines, dashboard, filters, staff access and sending identities. See **[docs/INTAKE-API.md](docs/INTAKE-API.md)** |
+
 No third-party email service is used: mail goes out through the SMTP login in `.env`, and replies and bounces are read back from the same mailbox over IMAP.
 
 ---
@@ -23,7 +25,7 @@ npm install
 npm run db:migrate              # creates the tables
 npm run db:seed                 # first admin user, pipeline stages, country rules, sample content
 npm run dev                     # website on http://localhost:3000, admin on /admin
-npm run worker                  # in a second terminal — sends email and monitors the mailbox
+npm run worker                  # in a second terminal — sends email, monitors the mailbox, delivers status webhooks
 ```
 
 Sign in at `/admin/login` with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. Administrators can sign in with email and password. Two-factor authentication is optional and can be enabled in Account security. Change the seeded password straight away in **Account security**.

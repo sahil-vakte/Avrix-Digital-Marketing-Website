@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { requireUser } from "@/lib/auth";
+import { canSeeApplication } from "@/lib/apps";
 import { db, t } from "@/db";
 import { previewAudience, segmentWhere, countContacts } from "@/lib/audience";
 import { Badge, Card, PageHeader, Pagination, Stat } from "@/components/admin/ui";
@@ -14,14 +16,15 @@ const PER = 50;
 export default async function ListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ page?: string }> }) {
   const { id } = await params;
   const page = Math.max(1, Number((await searchParams).page ?? 1));
+  const user = await requireUser();
   const list = await db.query.lists.findFirst({ where: eq(t.lists.id, id) });
-  if (!list) notFound();
+  if (!list || !(await canSeeApplication(user, list.applicationId))) notFound();
   const seg = list.type === "SEGMENT";
-  const where = seg ? segmentWhere(list.segmentRules ?? {}) : sql`exists (select 1 from list_members lm where lm.contact_id = ${t.contacts.id} and lm.list_id = ${id})`;
+  const where = seg ? and(segmentWhere(list.segmentRules ?? {}), list.applicationId ? or(eq(t.contacts.applicationId, list.applicationId), isNull(t.contacts.applicationId)) : undefined) : sql`exists (select 1 from list_members lm where lm.contact_id = ${t.contacts.id} and lm.list_id = ${id})`;
   const [rows, total, preview] = await Promise.all([
     db.select().from(t.contacts).where(where).orderBy(desc(t.contacts.createdAt)).limit(PER).offset((page - 1) * PER),
     countContacts(where),
-    previewAudience([id]),
+    previewAudience([id], list.applicationId),
   ]);
   return (
     <div>

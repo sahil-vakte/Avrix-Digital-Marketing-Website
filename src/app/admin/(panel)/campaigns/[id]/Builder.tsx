@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, isNull, or } from "drizzle-orm";
 import { db, t } from "@/db";
 import type { Campaign } from "@/db/schema";
 import { previewAudience } from "@/lib/audience";
@@ -19,9 +19,9 @@ const KNOWN_TAGS = ["first_name", "last_name", "full_name", "business_name", "em
 
 export async function Builder({ c, role, userEmail, previewContact }: { c: Campaign; role: string; userEmail: string; previewContact?: string }) {
   const [lists, steps, audience, cap, comp, sample] = await Promise.all([
-    db.select().from(t.lists).orderBy(asc(t.lists.name)),
+    db.select().from(t.lists).where(c.applicationId ? or(eq(t.lists.applicationId, c.applicationId), isNull(t.lists.applicationId)) : undefined).orderBy(asc(t.lists.name)),
     db.select().from(t.sequenceSteps).where(eq(t.sequenceSteps.campaignId, c.id)).orderBy(asc(t.sequenceSteps.order)),
-    previewAudience(c.listIds),
+    previewAudience(c.listIds, c.applicationId),
     capacity(),
     getSetting("compliance"),
     db.select({ id: t.contacts.id, email: t.contacts.email }).from(t.contacts).limit(20),

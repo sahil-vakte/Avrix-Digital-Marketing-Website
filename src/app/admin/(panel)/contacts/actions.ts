@@ -1,10 +1,11 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, t } from "@/db";
 import type { Contact } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { allowedApplications, appScope, canSeeApplication, defaultApplication } from "@/lib/apps";
 import { audit } from "@/lib/audit";
 import { checkEmail, normaliseEmail } from "@/lib/email-validate";
 import { parseUpload, autoMap } from "@/lib/import-parse";
@@ -35,7 +36,9 @@ export async function createContact(fd: FormData) {
   if (!f.businessName) redirect("/admin/contacts/new?error=Business+name+is+required");
   const exists = await db.query.contacts.findFirst({ where: eq(t.contacts.email, email) });
   if (exists) redirect(`/admin/contacts/${exists.id}?error=A+contact+with+this+email+already+exists`);
-  const [c] = await db.insert(t.contacts).values({ ...f, email, emailStatus: chk.status, emailFlags: chk.flags, consentAt: f.consentStatus === "OPTED_IN" ? new Date() : null }).returning();
+  const app = await defaultApplication(await appScope(user));
+  if (app.dataClass === "HEALTH") redirect("/admin/contacts/new?error=Contacts+cannot+be+added+to+a+health+application.+Choose+a+business+application+in+the+switcher.");
+  const [c] = await db.insert(t.contacts).values({ ...f, applicationId: app.id, email, emailStatus: chk.status, emailFlags: chk.flags, consentAt: f.consentStatus === "OPTED_IN" ? new Date() : null }).returning();
   const listId = strOrNull(fd.get("listId"));
   if (listId) await db.insert(t.listMembers).values({ listId, contactId: c.id }).onConflictDoNothing();
   await audit(user.id, "create", "contact", c.id, { email });
@@ -47,7 +50,9 @@ export async function quickAddContacts(fd: FormData) {
   const user = await requireUser();
   const lines = str(fd.get("bulk")).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const rows = lines.map((l) => l.split(/[,;\t]/).map((s) => s.trim()));
-  const [job] = await db.insert(t.importJobs).values({ fileName: "Pasted list", fileType: "paste", headers: ["Email", "Business name", "First name", "Last name"], rows, total: rows.length, createdById: user.id }).returning();
+  const app = await defaultApplication(await appScope(user));
+  if (app.dataClass === "HEALTH") redirect("/admin/contacts/import?error=Choose+a+business+application+in+the+switcher+before+importing");
+  const [job] = await db.insert(t.importJobs).values({ applicationId: app.id, fileName: "Pasted list", fileType: "paste", headers: ["Email", "Business name", "First name", "Last name"], rows, total: rows.length, createdById: user.id }).returning();
   const o: ImportOptions = {
     mapping: { "0": "email", "1": "businessName", "2": "firstName", "3": "lastName" },
     defaults: { country: str(fd.get("country")) || "GB", businessType: str(fd.get("businessType")) || "UNKNOWN", consentStatus: str(fd.get("consentStatus")) || "NONE", source: str(fd.get("source")) || "Manual paste", tags: "" },
@@ -63,15 +68,17 @@ export async function updateContact(fd: FormData) {
   const id = str(fd.get("id"));
   const f = fields(fd);
   const before = await db.query.contacts.findFirst({ where: eq(t.contacts.id, id) });
-  if (!before) return;
+  if (!before || !(await canSeeApplication(user, before.applicationId))) return;
   await db.update(t.contacts).set({ ...f, consentAt: f.consentStatus === "OPTED_IN" && before.consentStatus !== "OPTED_IN" ? new Date() : before.consentAt }).where(eq(t.contacts.id, id));
   await audit(user.id, "update", "contact", id, f);
   redirect(`/admin/contacts/${id}?ok=Saved`);
 }
 
 export async function setMembership(fd: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const contactId = str(fd.get("contactId"));
+  const contact = await db.query.contacts.findFirst({ where: eq(t.contacts.id, contactId), columns: { applicationId: true } });
+  if (!contact || !(await canSeeApplication(user, contact.applicationId))) return;
   const listId = str(fd.get("listId"));
   if (fd.get("op") === "remove") await db.delete(t.listMembers).where(sql`${t.listMembers.listId} = ${listId} and ${t.listMembers.contactId} = ${contactId}`);
   else await db.insert(t.listMembers).values({ listId, contactId }).onConflictDoNothing();
@@ -96,8 +103,12 @@ export async function eraseContact(fd: FormData) {
 
 export async function bulkContacts(fd: FormData) {
   const user = await requireUser();
-  const ids = fd.getAll("ids").map(String);
   const op = str(fd.get("op"));
+  // Only contacts in applications this user can see.
+  const allowed = (await allowedApplications(user)).map((a) => a.id);
+  const requested = fd.getAll("ids").map(String);
+  const ids = requested.length ? (await db.select({ id: t.contacts.id }).from(t.contacts)
+    .where(and(inArray(t.contacts.id, requested), user.role === "ADMIN" ? undefined : allowed.length ? inArray(t.contacts.applicationId, allowed) : sql`false`))).map((r) => r.id) : [];
   if (!ids.length) redirect("/admin/contacts?error=Select+at+least+one+contact");
   if (op === "list") {
     const listId = str(fd.get("listId"));
@@ -130,8 +141,10 @@ export async function uploadImport(fd: FormData) {
   }
   if (!parsed.rows.length) redirect("/admin/contacts/import?error=No+rows+found.+For+PDFs+make+sure+the+text+is+selectable+(not+a+scanned+image).");
   if (parsed.rows.length > 50_000) redirect("/admin/contacts/import?error=Maximum+50%2C000+rows+per+import");
+  const app = await defaultApplication(await appScope(user));
+  if (app.dataClass === "HEALTH") redirect("/admin/contacts/import?error=Choose+a+business+application+in+the+switcher+before+importing");
   const [job] = await db.insert(t.importJobs).values({
-    fileName: file.name, fileType: parsed.kind, headers: parsed.headers, rows: parsed.rows, total: parsed.rows.length,
+    applicationId: app.id, fileName: file.name, fileType: parsed.kind, headers: parsed.headers, rows: parsed.rows, total: parsed.rows.length,
     mapping: autoMap(parsed.headers), status: "UPLOADED", createdById: user.id,
   }).returning();
   await audit(user.id, "upload", "import", job.id, { file: file.name, rows: parsed.rows.length });
@@ -143,13 +156,14 @@ export async function runImport(fd: FormData) {
   const id = str(fd.get("jobId"));
   const job = await db.query.importJobs.findFirst({ where: eq(t.importJobs.id, id) });
   if (!job || job.status === "COMPLETED") redirect(`/admin/contacts/import/${id}`);
+  if (!(await canSeeApplication(user, job.applicationId))) redirect("/admin/contacts/import");
   const mapping = JSON.parse(str(fd.get("mapping")) || "{}") as Record<string, string>;
   if (!Object.values(mapping).includes("email")) redirect(`/admin/contacts/import/${id}?error=Map+a+column+to+Email`);
   const edited = str(fd.get("rows"));
   const rows = edited ? (JSON.parse(edited) as string[][]) : job.rows;
   let listId = strOrNull(fd.get("listId"));
   const newList = str(fd.get("newListName"));
-  if (newList) [{ id: listId }] = await db.insert(t.lists).values({ name: newList, type: "STATIC", description: `Imported from ${job.fileName}` }).returning({ id: t.lists.id });
+  if (newList) [{ id: listId }] = await db.insert(t.lists).values({ applicationId: job.applicationId, name: newList, type: "STATIC", description: `Imported from ${job.fileName}` }).returning({ id: t.lists.id });
   const templateName = str(fd.get("saveMappingAs"));
   if (templateName) {
     const byHeader: Record<string, string> = {};

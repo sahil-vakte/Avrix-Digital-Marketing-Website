@@ -3,13 +3,15 @@ name: Production deployment
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: avrix-marketing-production
+  group: avrix-marketing-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -56,6 +58,7 @@ jobs:
             .next node_modules public scripts src worker drizzle \
             package.json package-lock.json next.config.mjs tsconfig.json REVISION
       - name: Deploy through restricted SSH key
+        if: github.event_name != 'pull_request'
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOST_KEY: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -69,7 +72,8 @@ jobs:
             -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=8 avrixmarketing@92.205.160.39 deploy < release.tar.gz
       - name: Verify public endpoint and existing sites
+        if: github.event_name != 'pull_request'
         run: |
           curl --fail --retry 5 --retry-delay 3 "$APP_URL/api/health"
-          curl --fail --silent --output /dev/null https://avrixdigital.co.uk
+          curl --fail --silent --output /dev/null https://avrixdigital.com
           curl --fail --silent --output /dev/null https://wims.cloud
